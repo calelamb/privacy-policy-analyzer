@@ -1,0 +1,39 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Data files
+data/input/*
+data/output/*
+!data/input/.gitkeep
+!data/output/.gitkeep
+*.csv
+*.json
+*.xlsx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Distribution
+dist/
+build/
+*.egg-info/

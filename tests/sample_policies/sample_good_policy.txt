@@ -1,0 +1,63 @@
+PRIVACY POLICY FOR EDULEARN APP
+
+Last Updated: January 1, 2024
+
+1. DATA COLLECTION
+We collect the following types of information:
+- Personal Information: Student name, grade level, school name, parent/guardian email
+- Usage Data: Learning progress, quiz scores, time spent on activities
+- Device Information: Device type, operating system, unique device identifiers
+
+2. DATA USE PURPOSE
+We use collected data ONLY for:
+- Providing educational services and personalized learning experiences
+- Communicating with parents about student progress
+- Improving our educational content
+We DO NOT use student data for targeted advertising or behavioral marketing.
+
+3. THIRD-PARTY SHARING
+We share data with the following third parties:
+- AWS (Amazon Web Services): For secure cloud storage
+- SendGrid: For parent email communications
+- Google Analytics: For aggregated usage statistics (no PII shared)
+We do not sell or rent student data to any third parties.
+
+4. PARENTAL CONSENT
+For users under 13, we require verifiable parental consent before collecting any personal information. Parents can provide consent through:
+- Digital consent form with email verification
+- School acting as agent for parents (where permitted)
+
+5. LEGAL COMPLIANCE
+We comply with:
+- COPPA (Children's Online Privacy Protection Act)
+- FERPA (Family Educational Rights and Privacy Act)
+- State student privacy laws
+
+6. DATA RETENTION
+We retain student data only as long as necessary:
+- Active accounts: Data retained during use
+- Inactive accounts: Deleted after 18 months of inactivity
+- Upon request: Data deleted within 30 days
+
+7. USER RIGHTS
+Parents and eligible students have the right to:
+- Access their personal data
+- Request corrections to inaccurate data
+- Delete their account and associated data
+- Opt-out of certain data uses
+Contact privacy@edulearn.com to exercise these rights.
+
+8. DATA SECURITY
+We implement industry-standard security measures:
+- Encryption of data in transit (TLS/SSL)
+- Encryption of data at rest (AES-256)
+- Regular security audits
+- Limited employee access with authentication
+- Secure data centers with physical controls
+
+9. TRACKING TECHNOLOGIES
+We use limited tracking technologies:
+- Session cookies for login functionality
+- Analytics cookies to understand usage patterns
+- No third-party advertising cookies
+Users can disable cookies in browser settings, though some features may not function properly.
