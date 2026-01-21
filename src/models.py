@@ -3,7 +3,7 @@ Pydantic models for structured output schema.
 Based on K-12 Educational App Privacy Policy Research Framework.
 """
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field
 
 
 class PolicyAnalysisResult(BaseModel):
@@ -51,31 +51,3 @@ class PolicyAnalysisResult(BaseModel):
     tracking_technologies_disclosure: bool = Field(
         description="TRUE if policy discloses use of cookies, web beacons, analytics, or other tracking technologies"
     )
-
-    @computed_field
-    @property
-    def privacy_compliance_score(self) -> int:
-        """Sum of TRUE values (0-9). Higher = better privacy practices."""
-        return sum([
-            self.data_collection_disclosure,
-            self.data_use_purpose_specification,
-            self.third_party_sharing_disclosure,
-            self.parental_consent_mechanism,
-            self.coppa_ferpa_compliance_mention,
-            self.data_retention_policy,
-            self.user_data_rights,
-            self.data_security_encryption,
-            self.tracking_technologies_disclosure
-        ])
-
-    @computed_field
-    @property
-    def privacy_risk_level(self) -> str:
-        """Categorical risk assessment based on score."""
-        score = self.privacy_compliance_score
-        if score >= 7:
-            return "LOW"
-        elif score >= 4:
-            return "MEDIUM"
-        else:
-            return "HIGH"

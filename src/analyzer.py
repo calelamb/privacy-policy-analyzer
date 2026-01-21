@@ -153,9 +153,7 @@ class PolicyAnalyzer:
                     "data_retention_policy": False,
                     "user_data_rights": False,
                     "data_security_encryption": False,
-                    "tracking_technologies_disclosure": False,
-                    "privacy_compliance_score": 0,
-                    "privacy_risk_level": "HIGH"
+                    "tracking_technologies_disclosure": False
                 }
                 logger.warning(f"Skipping app {app_id}: empty or short policy")
             else:
@@ -179,9 +177,7 @@ class PolicyAnalyzer:
                         "data_retention_policy": False,
                         "user_data_rights": False,
                         "data_security_encryption": False,
-                        "tracking_technologies_disclosure": False,
-                        "privacy_compliance_score": 0,
-                        "privacy_risk_level": "HIGH"
+                        "tracking_technologies_disclosure": False
                     }
 
             results.append(result)
@@ -208,16 +204,6 @@ class PolicyAnalyzer:
         if 'error' in output_df.columns:
             error_count = output_df['error'].notna().sum()
             logger.info(f"Errors encountered: {error_count}")
-
-        if 'privacy_risk_level' in output_df.columns:
-            risk_counts = output_df['privacy_risk_level'].value_counts()
-            logger.info("\nPrivacy Risk Distribution:")
-            for risk_level, count in risk_counts.items():
-                logger.info(f"  {risk_level}: {count} apps ({count/len(output_df)*100:.1f}%)")
-
-        if 'privacy_compliance_score' in output_df.columns:
-            avg_score = output_df['privacy_compliance_score'].mean()
-            logger.info(f"\nAverage Privacy Compliance Score: {avg_score:.2f}/9")
 
         return output_df
 

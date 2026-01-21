@@ -69,18 +69,6 @@ The tool generates a CSV with the following columns:
 - `data_security_encryption`
 - `tracking_technologies_disclosure`
 
-### Computed Fields
-- `privacy_compliance_score`: Sum of TRUE values (0-9)
-- `privacy_risk_level`: LOW/MEDIUM/HIGH based on score
-
-## Privacy Risk Interpretation
-
-| Score | Risk Level | Description |
-|-------|------------|-------------|
-| 7-9 TRUE | LOW | Comprehensive privacy coverage |
-| 4-6 TRUE | MEDIUM | Partial coverage with gaps |
-| 0-3 TRUE | HIGH | Significant privacy concerns |
-
 ## Advanced Options
 
 ```bash
