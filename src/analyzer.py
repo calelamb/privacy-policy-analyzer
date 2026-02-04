@@ -5,6 +5,7 @@ Main analyzer module for processing privacy policies.
 import os
 import json
 import time
+import copy
 from typing import Optional, Dict, Any
 import logging
 
@@ -17,6 +18,66 @@ from .prompts import SYSTEM_PROMPT
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _make_openai_compatible_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert a Pydantic JSON schema to OpenAI structured output compatible format.
+
+    OpenAI's structured output doesn't support:
+    - $ref references (must be inlined)
+    - anyOf with null (for Optional types)
+    - allOf constructs
+    - title fields
+    """
+    schema = copy.deepcopy(schema)
+    defs = schema.pop("$defs", {})
+
+    def resolve_refs(obj: Any) -> Any:
+        """Recursively resolve $ref references and clean up schema."""
+        if isinstance(obj, dict):
+            # Handle $ref
+            if "$ref" in obj:
+                ref_path = obj["$ref"]
+                # Extract definition name from "#/$defs/Name"
+                def_name = ref_path.split("/")[-1]
+                if def_name in defs:
+                    resolved = resolve_refs(copy.deepcopy(defs[def_name]))
+                    return resolved
+                return obj
+
+            # Handle anyOf with null (Optional types) - convert to base type
+            if "anyOf" in obj:
+                non_null = [t for t in obj["anyOf"] if t.get("type") != "null"]
+                if len(non_null) == 1:
+                    result = resolve_refs(non_null[0])
+                    if "description" in obj:
+                        result["description"] = obj["description"]
+                    return result
+
+            # Handle allOf - merge all schemas
+            if "allOf" in obj:
+                merged = {}
+                for item in obj["allOf"]:
+                    resolved_item = resolve_refs(item)
+                    merged.update(resolved_item)
+                return merged
+
+            # Recursively process all keys
+            result = {}
+            for key, value in obj.items():
+                # Remove title fields (not needed for OpenAI)
+                if key == "title":
+                    continue
+                result[key] = resolve_refs(value)
+            return result
+
+        elif isinstance(obj, list):
+            return [resolve_refs(item) for item in obj]
+
+        return obj
+
+    return resolve_refs(schema)
 
 
 def _extract_coppa_fields(analysis: Dict[str, Any]) -> Dict[str, Any]:
@@ -109,7 +170,10 @@ class PolicyAnalyzer:
             logger.warning(f"Policy for app {app_id} truncated to {max_chars} chars")
 
         try:
-            # Build request parameters
+            # Build request parameters with OpenAI-compatible schema
+            compatible_schema = _make_openai_compatible_schema(
+                PolicyAnalysisResult.model_json_schema()
+            )
             request_params = {
                 "model": self.model,
                 "messages": [
@@ -120,7 +184,7 @@ class PolicyAnalyzer:
                     "type": "json_schema",
                     "json_schema": {
                         "name": "policy_analysis",
-                        "schema": PolicyAnalysisResult.model_json_schema(),
+                        "schema": compatible_schema,
                         "strict": True
                     }
                 }
