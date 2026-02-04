@@ -4,6 +4,7 @@ CLI entry point for the Privacy Policy Analyzer.
 """
 
 import argparse
+import asyncio
 import os
 import sys
 import json
@@ -99,6 +100,17 @@ Examples:
         default=0,
         help="Resume processing from a specific index (for crash recovery)"
     )
+    parser.add_argument(
+        "--concurrent",
+        action="store_true",
+        help="Use concurrent processing for faster batch analysis (recommended)"
+    )
+    parser.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=10,
+        help="Maximum concurrent API calls when using --concurrent (default: 10)"
+    )
 
     # API key option
     parser.add_argument(
@@ -159,15 +171,27 @@ Examples:
             print(f"Processing policies from {args.input}")
             print(f"Results will be saved to {args.output}")
 
-            results = analyzer.process_batch(
-                input_file=args.input,
-                output_file=args.output,
-                policy_column=args.policy_column,
-                id_column=args.id_column,
-                name_column=args.name_column,
-                delay=args.delay,
-                resume_from=args.resume_from
-            )
+            if args.concurrent:
+                print(f"Using concurrent processing with max {args.max_concurrent} parallel requests")
+                results = asyncio.run(analyzer.process_batch_concurrent(
+                    input_file=args.input,
+                    output_file=args.output,
+                    policy_column=args.policy_column,
+                    id_column=args.id_column,
+                    name_column=args.name_column,
+                    max_concurrent=args.max_concurrent,
+                    resume_from=args.resume_from
+                ))
+            else:
+                results = analyzer.process_batch(
+                    input_file=args.input,
+                    output_file=args.output,
+                    policy_column=args.policy_column,
+                    id_column=args.id_column,
+                    name_column=args.name_column,
+                    delay=args.delay,
+                    resume_from=args.resume_from
+                )
 
             print(f"\nResults saved to {args.output}")
             print(f"Processed {len(results)} policies")

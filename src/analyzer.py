@@ -6,12 +6,14 @@ import os
 import json
 import time
 import copy
-from typing import Optional, Dict, Any
+import asyncio
+from typing import Optional, Dict, Any, List
 import logging
 
 import openai
 import pandas as pd
 from tqdm import tqdm
+from tqdm.asyncio import tqdm as async_tqdm
 
 from .models import PolicyAnalysisResult
 from .prompts import SYSTEM_PROMPT
@@ -157,8 +159,10 @@ class PolicyAnalyzer:
             model: OpenAI model to use (default: gpt-5-nano)
         """
         self.client = openai.OpenAI(api_key=api_key)
+        self.async_client = openai.AsyncOpenAI(api_key=api_key)
         self.model = model
         self._reset_usage()
+        self._usage_lock = asyncio.Lock()
         logger.info(f"Initialized PolicyAnalyzer with model: {model}")
 
     def _reset_usage(self):
@@ -281,6 +285,223 @@ class PolicyAnalyzer:
             self._record_failure()
             logger.error(f"Error analyzing policy for app {app_id}: {e}")
             return None
+
+    async def analyze_policy_async(self, policy_text: str, app_id: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Analyze a single privacy policy asynchronously.
+
+        Args:
+            policy_text: The privacy policy text to analyze
+            app_id: Optional app identifier for logging
+
+        Returns:
+            Dictionary with analysis results or None if error
+        """
+        max_chars = 100000
+        if len(policy_text) > max_chars:
+            policy_text = policy_text[:max_chars] + "\n\n[TRUNCATED]"
+            logger.warning(f"Policy for app {app_id} truncated to {max_chars} chars")
+
+        try:
+            compatible_schema = _make_openai_compatible_schema(
+                PolicyAnalysisResult.model_json_schema()
+            )
+            request_params = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Analyze this privacy policy:\n\n{policy_text}"}
+                ],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "policy_analysis",
+                        "schema": compatible_schema,
+                        "strict": True
+                    }
+                }
+            }
+
+            if "nano" not in self.model.lower():
+                request_params["temperature"] = 0.1
+
+            response = await self.async_client.chat.completions.create(**request_params)
+
+            async with self._usage_lock:
+                self._record_usage(response)
+
+            result = json.loads(response.choices[0].message.content)
+            logger.info(f"Successfully analyzed policy for app {app_id}")
+            return result
+
+        except openai.RateLimitError as e:
+            logger.warning(f"Rate limit hit for app {app_id}, waiting 60s: {e}")
+            await asyncio.sleep(60)
+            return await self.analyze_policy_async(policy_text, app_id)
+
+        except Exception as e:
+            async with self._usage_lock:
+                self._record_failure()
+            logger.error(f"Error analyzing policy for app {app_id}: {e}")
+            return None
+
+    async def _process_single_policy(
+        self,
+        row: pd.Series,
+        semaphore: asyncio.Semaphore,
+        id_column: str,
+        name_column: str,
+        policy_column: str
+    ) -> Dict[str, Any]:
+        """Process a single policy with semaphore for rate limiting."""
+        async with semaphore:
+            app_id = row.get(id_column, "unknown")
+            app_name = row.get(name_column, "") if name_column in row.index else ""
+            policy_text = row.get(policy_column, "")
+
+            if pd.isna(policy_text) or len(str(policy_text).strip()) < 100:
+                logger.warning(f"Skipping app {app_id}: empty or short policy")
+                return {
+                    "app_id": app_id,
+                    "app_name": app_name,
+                    "error": "empty_or_short_policy",
+                    "data_collection_disclosure": False,
+                    "data_use_purpose_specification": False,
+                    "third_party_sharing_disclosure": False,
+                    "third_party_list": "",
+                    "third_party_data_shared": "",
+                    "parental_consent_mechanism": False,
+                    "coppa_ferpa_compliance_mention": False,
+                    "data_retention_policy": False,
+                    "user_data_rights": False,
+                    "data_security_encryption": False,
+                    "tracking_technologies_disclosure": False,
+                    **_get_empty_coppa_fields(),
+                    **_get_empty_gdpr_fields(),
+                }
+
+            analysis = await self.analyze_policy_async(str(policy_text), app_id)
+
+            if analysis:
+                third_party_list = analysis.get("third_party_list", [])
+                third_party_details = analysis.get("third_party_details", [])
+                third_party_data_shared = []
+                for detail in third_party_details:
+                    name = detail.get("name", "Unknown")
+                    purpose = detail.get("purpose", "Not specified")
+                    data_types = detail.get("data_shared", [])
+                    data_str = ", ".join(data_types) if data_types else "Not specified"
+                    third_party_data_shared.append(f"{name} ({purpose}): {data_str}")
+
+                return {
+                    "app_id": app_id,
+                    "app_name": app_name,
+                    "data_collection_disclosure": analysis.get("data_collection_disclosure", False),
+                    "data_use_purpose_specification": analysis.get("data_use_purpose_specification", False),
+                    "third_party_sharing_disclosure": analysis.get("third_party_sharing_disclosure", False),
+                    "third_party_list": "; ".join(third_party_list) if third_party_list else "",
+                    "third_party_data_shared": " | ".join(third_party_data_shared) if third_party_data_shared else "",
+                    "parental_consent_mechanism": analysis.get("parental_consent_mechanism", False),
+                    "coppa_ferpa_compliance_mention": analysis.get("coppa_ferpa_compliance_mention", False),
+                    "data_retention_policy": analysis.get("data_retention_policy", False),
+                    "user_data_rights": analysis.get("user_data_rights", False),
+                    "data_security_encryption": analysis.get("data_security_encryption", False),
+                    "tracking_technologies_disclosure": analysis.get("tracking_technologies_disclosure", False),
+                    **_extract_coppa_fields(analysis),
+                    **_extract_gdpr_fields(analysis),
+                }
+            else:
+                return {
+                    "app_id": app_id,
+                    "app_name": app_name,
+                    "error": "analysis_failed",
+                    "data_collection_disclosure": False,
+                    "data_use_purpose_specification": False,
+                    "third_party_sharing_disclosure": False,
+                    "third_party_list": "",
+                    "third_party_data_shared": "",
+                    "parental_consent_mechanism": False,
+                    "coppa_ferpa_compliance_mention": False,
+                    "data_retention_policy": False,
+                    "user_data_rights": False,
+                    "data_security_encryption": False,
+                    "tracking_technologies_disclosure": False,
+                    **_get_empty_coppa_fields(),
+                    **_get_empty_gdpr_fields(),
+                }
+
+    async def process_batch_concurrent(
+        self,
+        input_file: str,
+        output_file: str,
+        policy_column: str = "policy_text",
+        id_column: str = "app_id",
+        name_column: str = "app_name",
+        max_concurrent: int = 10,
+        resume_from: int = 0
+    ) -> pd.DataFrame:
+        """
+        Process a batch of policies concurrently from CSV.
+
+        Args:
+            input_file: Path to input CSV file
+            output_file: Path to output CSV file
+            policy_column: Column name containing policy text
+            id_column: Column name containing app identifier
+            name_column: Column name containing app name
+            max_concurrent: Maximum number of concurrent API calls (default: 10)
+            resume_from: Index to resume processing from
+
+        Returns:
+            DataFrame with analysis results
+        """
+        logger.info(f"Loading policies from {input_file}")
+        df = pd.read_csv(input_file)
+
+        if resume_from > 0:
+            df = df.iloc[resume_from:]
+            logger.info(f"Resuming from index {resume_from}")
+
+        total_policies = len(df)
+        logger.info(f"Found {total_policies} policies to analyze (max {max_concurrent} concurrent)")
+
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        # Create tasks for all policies
+        tasks = [
+            self._process_single_policy(row, semaphore, id_column, name_column, policy_column)
+            for _, row in df.iterrows()
+        ]
+
+        # Process with progress bar
+        results = []
+        for coro in async_tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Analyzing"):
+            result = await coro
+            results.append(result)
+
+            # Save progress periodically
+            if len(results) % 50 == 0:
+                pd.DataFrame(results).to_csv(output_file, index=False)
+                logger.info(f"Progress saved: {len(results)}/{total_policies} policies analyzed")
+
+        # Sort results by app_id to maintain order
+        results.sort(key=lambda x: float(x.get('app_id', 0)) if x.get('app_id') else 0)
+
+        # Final save
+        output_df = pd.DataFrame(results)
+        output_df.to_csv(output_file, index=False)
+
+        logger.info("\n" + "="*50)
+        logger.info("ANALYSIS COMPLETE")
+        logger.info("="*50)
+        logger.info(f"Total policies processed: {len(output_df)}")
+
+        if 'error' in output_df.columns:
+            error_count = output_df['error'].notna().sum()
+            logger.info(f"Errors encountered: {error_count}")
+
+        self.print_usage()
+        return output_df
 
     def process_batch(
         self,
