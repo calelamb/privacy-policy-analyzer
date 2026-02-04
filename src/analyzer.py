@@ -140,6 +140,14 @@ class PolicyAnalyzer:
     based on K-12 Educational App Privacy Policy Research Framework.
     """
 
+    # Pricing per 1M tokens (as of 2024) - update as needed
+    MODEL_PRICING = {
+        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+        "gpt-4o": {"input": 2.50, "output": 10.00},
+        "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
+        "gpt-5-nano": {"input": 0.10, "output": 0.40},  # Estimated
+    }
+
     def __init__(self, api_key: str, model: str = "gpt-5-nano"):
         """
         Initialize the PolicyAnalyzer.
@@ -150,7 +158,70 @@ class PolicyAnalyzer:
         """
         self.client = openai.OpenAI(api_key=api_key)
         self.model = model
+        self._reset_usage()
         logger.info(f"Initialized PolicyAnalyzer with model: {model}")
+
+    def _reset_usage(self):
+        """Reset usage counters."""
+        self._usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "requests": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+        }
+
+    def _record_usage(self, response):
+        """Record usage from an API response."""
+        if hasattr(response, 'usage') and response.usage:
+            self._usage["prompt_tokens"] += response.usage.prompt_tokens
+            self._usage["completion_tokens"] += response.usage.completion_tokens
+            self._usage["total_tokens"] += response.usage.total_tokens
+        self._usage["requests"] += 1
+        self._usage["successful_requests"] += 1
+
+    def _record_failure(self):
+        """Record a failed request."""
+        self._usage["requests"] += 1
+        self._usage["failed_requests"] += 1
+
+    def get_usage(self) -> Dict[str, Any]:
+        """
+        Get current usage statistics.
+
+        Returns:
+            Dictionary with usage stats including tokens, requests, and estimated cost.
+        """
+        usage = self._usage.copy()
+
+        # Calculate estimated cost
+        pricing = self.MODEL_PRICING.get(self.model, {"input": 0, "output": 0})
+        input_cost = (usage["prompt_tokens"] / 1_000_000) * pricing["input"]
+        output_cost = (usage["completion_tokens"] / 1_000_000) * pricing["output"]
+        usage["estimated_cost_usd"] = round(input_cost + output_cost, 4)
+        usage["model"] = self.model
+
+        return usage
+
+    def print_usage(self):
+        """Print a formatted usage summary."""
+        usage = self.get_usage()
+        print("\n" + "=" * 50)
+        print("OPENAI API USAGE SUMMARY")
+        print("=" * 50)
+        print(f"Model: {usage['model']}")
+        print(f"Requests: {usage['requests']} ({usage['successful_requests']} successful, {usage['failed_requests']} failed)")
+        print(f"Prompt tokens: {usage['prompt_tokens']:,}")
+        print(f"Completion tokens: {usage['completion_tokens']:,}")
+        print(f"Total tokens: {usage['total_tokens']:,}")
+        print(f"Estimated cost: ${usage['estimated_cost_usd']:.4f}")
+        print("=" * 50)
+
+    def reset_usage(self):
+        """Reset usage counters. Call this to start fresh tracking."""
+        self._reset_usage()
+        logger.info("Usage counters reset")
 
     def analyze_policy(self, policy_text: str, app_id: str = None) -> Optional[Dict[str, Any]]:
         """
@@ -195,6 +266,7 @@ class PolicyAnalyzer:
                 request_params["temperature"] = 0.1
 
             response = self.client.chat.completions.create(**request_params)
+            self._record_usage(response)
 
             result = json.loads(response.choices[0].message.content)
             logger.info(f"Successfully analyzed policy for app {app_id}")
@@ -206,6 +278,7 @@ class PolicyAnalyzer:
             return self.analyze_policy(policy_text, app_id)  # Retry
 
         except Exception as e:
+            self._record_failure()
             logger.error(f"Error analyzing policy for app {app_id}: {e}")
             return None
 
@@ -355,6 +428,9 @@ class PolicyAnalyzer:
         if 'error' in output_df.columns:
             error_count = output_df['error'].notna().sum()
             logger.info(f"Errors encountered: {error_count}")
+
+        # Print usage summary
+        self.print_usage()
 
         return output_df
 
