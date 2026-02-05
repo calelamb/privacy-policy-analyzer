@@ -69,6 +69,10 @@ The tool generates a CSV with the following columns:
 - `data_security_encryption`
 - `tracking_technologies_disclosure`
 
+### Third-Party Data Sharing Details
+- `third_party_list`: Semicolon-separated list of all third parties mentioned in the policy (e.g., "Google Analytics; AWS; Facebook")
+- `third_party_data_shared`: Detailed breakdown of what specific data is shared with each third party, pipe-separated (e.g., "Google Analytics (analytics): IP address, device ID, usage data | AWS (storage): all user data")
+
 ## Advanced Options
 
 ```bash
