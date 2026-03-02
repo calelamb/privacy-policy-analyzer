@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* BYU Primary */
+  --color-navy: #002E5D;
+  --color-navy-light: #003d7a;
+  --color-navy-dark: #001a33;
+  --color-royal: #0047BA;
+
+  /* BYU Accents */
+  --color-byu-blue: #0072CE;
+  --color-byu-lightblue: #BDD6E6;
+  --color-byu-orange: #D14124;
+  --color-byu-green: #00966C;
+
+  /* BYU Neutrals */
+  --color-slate-gray: #7C878E;
+  --color-light-gray: #C7C9C7;
+  --color-sand: #A39382;
+  --color-light-sand: #D1CCBD;
+  --color-blue-gray: #6E7CA0;
+
+  /* Page tones */
+  --color-page: #FAFBFC;
+  --color-surface: #FFFFFF;
+  --color-border: #E5E7EB;
+  --color-border-light: #F0F1F3;
+  --color-text-primary: #1a1a2e;
+  --color-text-secondary: #4a5568;
+  --color-text-muted: #7C878E;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #FAFBFC;
+  color: #1a1a2e;
+}
