@@ -87,6 +87,7 @@ export default function Results() {
           <p className="text-white/70 max-w-2xl leading-relaxed">
             Key findings from 1,694 K-12 educational app privacy policies (1,395 valid).
             The data reveals significant gaps in regulatory compliance and transparency.
+            Data current as of February 2026.
           </p>
         </div>
       </div>

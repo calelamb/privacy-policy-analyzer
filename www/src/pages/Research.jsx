@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Zap,
   CheckCircle2,
@@ -6,6 +7,12 @@ import {
   Cpu,
   Code2,
   Layers,
+  FileDown,
+  BookOpen,
+  Shield,
+  Database,
+  Copy,
+  Check,
 } from 'lucide-react'
 import SectionHeading from '../components/SectionHeading'
 
@@ -86,6 +93,90 @@ const timeline = [
   { date: 'Feb 17, 2026', title: 'Cluster Analysis', desc: 'KMeans clustering on disclosure columns revealed three distinct compliance tiers.' },
 ]
 
+const bibtex = `@inproceedings{keith2026edtech,
+  title     = {Protecting Student Privacy in K-12 Educational Technology},
+  author    = {Keith, Mark J. and Corbett, Luke and Hiller, Mekeli and Lamb, Cale and Laryea-Akrong, Asante and Park, Preston and Spencer, Logan},
+  booktitle = {Proceedings of the Americas Conference on Information Systems (AMCIS)},
+  year      = {2026},
+  address   = {Minneapolis, MN},
+  note      = {Forthcoming}
+}`
+
+function CiteAndEthics() {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(bibtex).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <section className="bg-surface border-y border-border">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 pb-24">
+        <SectionHeading
+          eyebrow="Attribution"
+          title="Cite This Work"
+        />
+
+        <div className="max-w-3xl mx-auto space-y-6">
+          {/* APA Citation */}
+          <div className="bg-page border border-border rounded-lg p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <BookOpen className="w-4 h-4 text-royal" />
+              <h3 className="text-sm font-semibold text-text-primary">APA Citation</h3>
+            </div>
+            <p className="text-sm text-text-secondary leading-relaxed">
+              Keith, M. J., Corbett, L., Hiller, M., Lamb, C., Laryea-Akrong, A., Park, P., &amp; Spencer, L. (2026). Protecting student privacy in K-12 educational technology. <em>Proceedings of the Americas Conference on Information Systems (AMCIS)</em>. Minneapolis, MN.
+            </p>
+          </div>
+
+          {/* BibTeX */}
+          <div className="bg-page border border-border rounded-lg p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-text-primary">BibTeX</h3>
+              <button
+                onClick={handleCopy}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-royal hover:text-navy transition-colors"
+              >
+                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <pre className="text-xs text-text-secondary bg-navy/[0.03] rounded p-4 overflow-x-auto leading-relaxed">
+              {bibtex}
+            </pre>
+          </div>
+
+          {/* Ethics & Data */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-page border border-border rounded-lg p-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className="w-4 h-4 text-royal" />
+                <h3 className="text-sm font-semibold text-text-primary">Ethics Review</h3>
+              </div>
+              <p className="text-sm text-text-secondary leading-relaxed">
+                This study's IRB status is under review with BYU's Institutional Review Board.
+              </p>
+            </div>
+
+            <div className="bg-page border border-border rounded-lg p-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Database className="w-4 h-4 text-royal" />
+                <h3 className="text-sm font-semibold text-text-primary">Data Availability</h3>
+              </div>
+              <p className="text-sm text-text-secondary leading-relaxed">
+                The analyzed dataset is available upon request. Contact the principal investigator for access.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export default function Research() {
   return (
     <main className="pt-14">
@@ -105,6 +196,15 @@ export default function Research() {
             Our pipeline combines large-language models with established privacy frameworks
             from Common Sense Media, the FTC, and iKeepSafe to evaluate K-12 app privacy practices at scale.
           </p>
+          <a
+            href="/AMCIS_2026_EdTech_Privacy_Policies.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 mt-4 bg-white/10 hover:bg-white/20 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            <FileDown className="w-4 h-4" />
+            Download AMCIS 2026 Paper (PDF)
+          </a>
         </div>
       </div>
 
@@ -261,7 +361,7 @@ export default function Research() {
       </section>
 
       {/* Timeline */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 pb-24">
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <SectionHeading
           eyebrow="Development"
           title="Project Timeline"
@@ -283,6 +383,9 @@ export default function Research() {
           </div>
         </div>
       </section>
+
+      {/* Cite This Work & Ethics */}
+      <CiteAndEthics />
     </main>
   )
 }

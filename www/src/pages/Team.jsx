@@ -1,4 +1,4 @@
-import { ExternalLink, BookOpen, Award, GraduationCap, MapPin } from 'lucide-react'
+import { ExternalLink, BookOpen, Award, GraduationCap, MapPin, Mail } from 'lucide-react'
 import SectionHeading from '../components/SectionHeading'
 
 const professor = {
@@ -28,41 +28,11 @@ const professor = {
 
 const teamMembers = [
   {
-    name: 'Cale Lamb',
-    role: 'Research Assistant',
-    major: 'Computer Science',
-    gradYear: '2028',
-    period: 'Sep 2025 \u2013 Present',
-    contributions: [
-      'Designed and built the full analysis pipeline (Python, OpenAI API, Pydantic)',
-      'Implemented COPPA and GDPR compliance extraction modules',
-      'Conducted multi-model evaluation (GPT-5-nano vs GPT-4o-mini vs GPT-4o)',
-      'Built concurrent batch processing with rate limiting and crash recovery',
-      'Performed KMeans cluster analysis and compliance scoring',
-      'Analyzed 1,694+ privacy policies end-to-end',
-    ],
-  },
-  {
     name: 'Luke Corbett',
     role: 'Research Assistant',
     major: 'Information Systems',
     gradYear: '2026',
     period: 'Sep 2025 \u2013 Present',
-    contributions: [
-      'Data analysis and visualization (Jupyter notebooks)',
-      'Merged app metadata with policy analysis results',
-      'Computed disclosure scores and compliance percentages',
-    ],
-  },
-  {
-    name: 'Preston Park',
-    role: 'Research Assistant',
-    major: 'Information Systems',
-    gradYear: '2026',
-    period: 'Sep 2025 \u2013 Present',
-    contributions: [
-      'Contribution details to be added',
-    ],
   },
   {
     name: 'Mekeli Hiller',
@@ -70,9 +40,13 @@ const teamMembers = [
     major: 'Information Systems',
     gradYear: '2026',
     period: 'Sep 2025 \u2013 Present',
-    contributions: [
-      'Contribution details to be added',
-    ],
+  },
+  {
+    name: 'Cale Lamb',
+    role: 'Research Assistant',
+    major: 'Computer Science',
+    gradYear: '2028',
+    period: 'Sep 2025 \u2013 Present',
   },
   {
     name: 'Asante Laryea-Akrong',
@@ -80,9 +54,13 @@ const teamMembers = [
     major: 'Information Systems',
     gradYear: '2026',
     period: 'Sep 2025 \u2013 Present',
-    contributions: [
-      'Contribution details to be added',
-    ],
+  },
+  {
+    name: 'Preston Park',
+    role: 'Research Assistant',
+    major: 'Information Systems',
+    gradYear: '2026',
+    period: 'Sep 2025 \u2013 Present',
   },
   {
     name: 'Logan Spencer',
@@ -90,9 +68,6 @@ const teamMembers = [
     major: 'Information Systems',
     gradYear: '2026',
     period: 'Sep 2025 \u2013 Present',
-    contributions: [
-      'Contribution details to be added',
-    ],
   },
 ]
 
@@ -209,16 +184,47 @@ export default function Team() {
         </div>
       </section>
 
+      {/* Contact */}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-10">
+        <div className="bg-surface border border-border rounded-lg p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="w-10 h-10 rounded bg-royal/10 flex items-center justify-center shrink-0">
+            <Mail className="w-5 h-5 text-royal" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-text-primary mb-0.5">Contact</h3>
+            <p className="text-sm text-text-secondary">
+              For inquiries about the lab, collaboration, or data access, reach out to the principal investigator.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3 text-sm">
+            <a
+              href="mailto:mark_keith@byu.edu"
+              className="inline-flex items-center gap-1.5 text-royal hover:underline font-medium"
+            >
+              mark_keith@byu.edu
+            </a>
+            <a
+              href="https://marriott.byu.edu/directory/details?id=29237"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-royal hover:underline font-medium"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Faculty Page
+            </a>
+          </div>
+        </div>
+      </section>
+
       {/* Student Contributors */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
         <SectionHeading
           eyebrow="Research Team"
           title="Student Contributors"
-          description="Items marked \u201cTBD\u201d are placeholders to be updated with actual details."
         />
 
-        <div className="grid md:grid-cols-2 gap-4">
-          {teamMembers.map(({ name, role, major, gradYear, period, contributions }) => (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {teamMembers.map(({ name, role, major, gradYear, period }) => (
             <div key={name} className="bg-surface border border-border rounded-lg p-6 hover:shadow-sm transition-shadow">
               <div className="flex items-start gap-3 mb-4">
                 <div className="w-11 h-11 rounded bg-navy/5 flex items-center justify-center shrink-0">
@@ -232,7 +238,7 @@ export default function Team() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-3 gap-3">
                 <div className="bg-page border border-border-light rounded px-3 py-2 text-center">
                   <p className="text-[10px] uppercase tracking-wider text-text-muted mb-0.5">Major</p>
                   <p className="text-xs font-medium text-text-primary">{major}</p>
@@ -246,16 +252,6 @@ export default function Team() {
                   <p className="text-xs font-medium text-text-primary">{period}</p>
                 </div>
               </div>
-
-              <h4 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">Contributions</h4>
-              <ul className="space-y-1.5">
-                {contributions.map((c, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                    <span className="w-1 h-1 rounded-full bg-navy mt-2 shrink-0" />
-                    {c}
-                  </li>
-                ))}
-              </ul>
             </div>
           ))}
         </div>
