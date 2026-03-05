@@ -7,7 +7,7 @@ import json
 import time
 import copy
 import asyncio
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 import logging
 
 import openai
@@ -82,6 +82,41 @@ def _make_openai_compatible_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     return resolve_refs(schema)
 
 
+def build_policy_text(row: Any) -> str:
+    """
+    Construct the best available policy text from ppCompany and ppPlatform columns.
+
+    Priority:
+    1. ppCompany alone if >= 200 chars (vendor's full policy — preferred)
+    2. ppPlatform alone if ppCompany is short/absent and ppPlatform >= 200 chars
+    3. Concatenation of both if both are >= 100 chars
+    4. Whatever is available if both are short (will likely be caught by the < 100 char filter)
+
+    Args:
+        row: DataFrame row or dict with ppCompany and ppPlatform keys
+
+    Returns:
+        Combined policy text string
+    """
+    pp_company = str(row.get('ppCompany', '') or '').strip()
+    pp_platform = str(row.get('ppPlatform', '') or '').strip()
+
+    company_len = len(pp_company)
+    platform_len = len(pp_platform)
+
+    if company_len >= 200 and platform_len >= 100:
+        # Both substantive — include both, company policy first
+        return f"{pp_company}\n\n[APP STORE PRIVACY LABEL]\n{pp_platform}"
+    elif company_len >= 200:
+        return pp_company
+    elif platform_len >= 200:
+        return pp_platform
+    else:
+        # Neither is long — concatenate whatever exists
+        combined = f"{pp_company} {pp_platform}".strip()
+        return combined
+
+
 def _extract_coppa_fields(analysis: Dict[str, Any]) -> Dict[str, Any]:
     """Extract COPPA analysis fields for CSV output."""
     coppa = analysis.get("coppa_analysis", {})
@@ -136,27 +171,198 @@ def _get_empty_gdpr_fields() -> Dict[str, Any]:
     }
 
 
+# Define which indicators belong to each regulatory framework
+GDPR_INDICATOR_FIELDS = [
+    "ci_controller_identity", "ci_dpo_contact",
+    "td_categories_disclosed", "pu_purposes_stated", "pu_legal_basis",
+    "ts_recipients_disclosed", "it_eu_transfers",
+    "re_retention_period",
+    "ur_right_access", "ur_right_rectification", "ur_right_erasure",
+    "ur_right_restrict", "ur_right_portability", "ur_right_object",
+    "ur_right_withdraw_consent", "ur_right_supervisory_complaint",
+    "adm_profiling_disclosure", "dp_mandatory_disclosure",
+    "sec_gdpr_measures", "pa_concise_transparent", "ds_indirect_data_source",
+]
+
+COPPA_INDICATOR_FIELDS = [
+    "ci_controller_identity", "ci_operator_list",
+    "td_children_data_types", "td_persistent_identifiers",
+    "pu_children_data_use",
+    "ts_children_data_recipients", "ts_third_party_purpose",
+    "re_children_retention",
+    "ur_parent_review_right", "ur_parent_delete_right", "ur_parent_refuse_right",
+    "sec_coppa_safeguards", "pa_prominent_link",
+    "up_material_changes_notice", "cm_parental_consent_procedures",
+]
+
+ALL_INDICATOR_FIELDS = list(dict.fromkeys(GDPR_INDICATOR_FIELDS + COPPA_INDICATOR_FIELDS + [
+    "ci_controller_identity", "td_categories_disclosed", "td_persistent_identifiers",
+    "pu_purposes_stated", "ts_recipients_disclosed", "re_retention_period",
+    "sec_coppa_safeguards", "sec_gdpr_measures", "pa_prominent_link",
+    "pa_concise_transparent", "up_material_changes_notice",
+    "cm_parental_consent_procedures", "ds_indirect_data_source",
+]))
+
+
+def _compute_composite_scores(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute GDPR, COPPA, and overall composite scores from indicator dict."""
+
+    def count_true(fields):
+        return sum(1 for f in fields if result.get(f, False) is True)
+
+    gdpr_score = count_true(GDPR_INDICATOR_FIELDS)
+    coppa_score = count_true(COPPA_INDICATOR_FIELDS)
+    overall_score = count_true(ALL_INDICATOR_FIELDS)
+
+    return {
+        "gdpr_composite_score": gdpr_score,
+        "gdpr_composite_pct": round(gdpr_score / len(GDPR_INDICATOR_FIELDS) * 100, 2),
+        "coppa_composite_score": coppa_score,
+        "coppa_composite_pct": round(coppa_score / len(COPPA_INDICATOR_FIELDS) * 100, 2),
+        "overall_composite_score": overall_score,
+        "overall_composite_pct": round(overall_score / len(ALL_INDICATOR_FIELDS) * 100, 2),
+    }
+
+
+# Complete list of the 35 Table 1 boolean indicator field names
+TABLE1_BOOLEAN_FIELDS = [
+    "ci_controller_identity", "ci_dpo_contact", "ci_operator_list",
+    "td_categories_disclosed", "td_children_data_types", "td_persistent_identifiers",
+    "pu_purposes_stated", "pu_legal_basis", "pu_children_data_use",
+    "ts_recipients_disclosed", "ts_children_data_recipients", "ts_third_party_purpose",
+    "it_eu_transfers",
+    "re_retention_period", "re_children_retention",
+    "ur_right_access", "ur_right_rectification", "ur_right_erasure", "ur_right_restrict",
+    "ur_right_portability", "ur_right_object", "ur_right_withdraw_consent",
+    "ur_right_supervisory_complaint",
+    "ur_parent_review_right", "ur_parent_delete_right", "ur_parent_refuse_right",
+    "adm_profiling_disclosure", "dp_mandatory_disclosure",
+    "sec_coppa_safeguards", "sec_gdpr_measures",
+    "pa_concise_transparent", "pa_prominent_link",
+    "up_material_changes_notice", "cm_parental_consent_procedures",
+    "ds_indirect_data_source",
+]
+
+TABLE1_EVIDENCE_FIELDS = [f + "_evidence" for f in TABLE1_BOOLEAN_FIELDS]
+
+TABLE1_ENUM_FIELDS = [
+    "ts_sharing_direction", "ts_children_sharing_direction",
+    "re_retention_specificity", "re_retention_stated_period",
+    "sec_specificity", "sec_measures_listed",
+    "cm_consent_specificity",
+]
+
+
+def _extract_table1_fields(analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract all Table 1 indicator booleans, evidence strings, and enum fields."""
+    result = {}
+    # Boolean indicators
+    for field in TABLE1_BOOLEAN_FIELDS:
+        result[field] = analysis.get(field, False)
+    # Evidence strings
+    for field in TABLE1_EVIDENCE_FIELDS:
+        result[field] = analysis.get(field, "")
+    # Enum and free-text fields
+    for field in TABLE1_ENUM_FIELDS:
+        result[field] = analysis.get(field, "")
+    return result
+
+
+def _get_empty_table1_fields() -> Dict[str, Any]:
+    """Return empty Table 1 fields for error/skip cases."""
+    result = {}
+    for field in TABLE1_BOOLEAN_FIELDS:
+        result[field] = False
+    for field in TABLE1_EVIDENCE_FIELDS:
+        result[field] = ""
+    for field in TABLE1_ENUM_FIELDS:
+        result[field] = ""
+    return result
+
+
+def _build_success_result(app_id, app_name, analysis):
+    """Build result dict for a successful analysis."""
+    third_party_list = analysis.get("third_party_list", [])
+    third_party_details = analysis.get("third_party_details", [])
+    third_party_data_shared = []
+    for detail in third_party_details:
+        name = detail.get("name", "Unknown")
+        purpose = detail.get("purpose", "Not specified")
+        data_types = detail.get("data_shared", [])
+        data_str = ", ".join(data_types) if data_types else "Not specified"
+        third_party_data_shared.append(f"{name} ({purpose}): {data_str}")
+
+    composite_scores = _compute_composite_scores(analysis)
+
+    return {
+        "app_id": app_id,
+        "app_name": app_name,
+        **_extract_table1_fields(analysis),
+        **_extract_coppa_fields(analysis),
+        **_extract_gdpr_fields(analysis),
+        "third_party_list": "; ".join(third_party_list) if third_party_list else "",
+        "third_party_data_shared": " | ".join(third_party_data_shared) if third_party_data_shared else "",
+        **composite_scores,
+    }
+
+
+def _build_error_result(app_id, app_name, error_type):
+    """Build result dict for an error/skip case."""
+    return {
+        "app_id": app_id,
+        "app_name": app_name,
+        "error": error_type,
+        **_get_empty_table1_fields(),
+        **_get_empty_coppa_fields(),
+        **_get_empty_gdpr_fields(),
+        "third_party_list": "",
+        "third_party_data_shared": "",
+        "gdpr_composite_score": 0,
+        "gdpr_composite_pct": 0.0,
+        "coppa_composite_score": 0,
+        "coppa_composite_pct": 0.0,
+        "overall_composite_score": 0,
+        "overall_composite_pct": 0.0,
+    }
+
+
+def _resolve_policy_text(row, policy_column):
+    """Resolve policy text from specified column or ppCompany/ppPlatform fallback."""
+    policy_text = row.get(policy_column, "")
+    if pd.isna(policy_text) or len(str(policy_text).strip()) < 100:
+        # Try building from ppCompany/ppPlatform if available
+        row_index = row.index if hasattr(row, 'index') else row.keys()
+        if 'ppCompany' in row_index or 'ppPlatform' in row_index:
+            policy_text = build_policy_text(row)
+        else:
+            policy_text = ""
+    return policy_text
+
+
 class PolicyAnalyzer:
     """
     Analyzes privacy policies using OpenAI's API to extract boolean indicators
     based on K-12 Educational App Privacy Policy Research Framework.
     """
 
-    # Pricing per 1M tokens (as of 2024) - update as needed
+    # Pricing per 1M tokens - update as needed
     MODEL_PRICING = {
-        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-        "gpt-4o": {"input": 2.50, "output": 10.00},
-        "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
-        "gpt-5-nano": {"input": 0.10, "output": 0.40},  # Estimated
+        "gpt-5.1":      {"input": 2.00,  "output": 8.00},
+        "gpt-4.1":      {"input": 2.00,  "output": 8.00},
+        "gpt-4.1-mini": {"input": 0.40,  "output": 1.60},
+        "gpt-4o":       {"input": 2.50,  "output": 10.00},
+        "gpt-4o-mini":  {"input": 0.15,  "output": 0.60},
+        "gpt-5-nano":   {"input": 0.10,  "output": 0.40},
+        "gpt-3.5-turbo":{"input": 0.50,  "output": 1.50},
     }
 
-    def __init__(self, api_key: str, model: str = "gpt-5-nano"):
+    def __init__(self, api_key: str, model: str = "gpt-5.1"):
         """
         Initialize the PolicyAnalyzer.
 
         Args:
             api_key: OpenAI API key
-            model: OpenAI model to use (default: gpt-5-nano)
+            model: OpenAI model to use (default: gpt-5.1)
         """
         self.client = openai.OpenAI(api_key=api_key)
         self.async_client = openai.AsyncOpenAI(api_key=api_key)
@@ -262,12 +468,9 @@ class PolicyAnalyzer:
                         "schema": compatible_schema,
                         "strict": True
                     }
-                }
+                },
+                "temperature": 0,
             }
-
-            # Only add temperature for models that support it (gpt-5-nano doesn't)
-            if "nano" not in self.model.lower():
-                request_params["temperature"] = 0.1
 
             response = self.client.chat.completions.create(**request_params)
             self._record_usage(response)
@@ -319,11 +522,9 @@ class PolicyAnalyzer:
                         "schema": compatible_schema,
                         "strict": True
                     }
-                }
+                },
+                "temperature": 0,
             }
-
-            if "nano" not in self.model.lower():
-                request_params["temperature"] = 0.1
 
             response = await self.async_client.chat.completions.create(**request_params)
 
@@ -357,78 +558,18 @@ class PolicyAnalyzer:
         async with semaphore:
             app_id = row.get(id_column, "unknown")
             app_name = row.get(name_column, "") if name_column in row.index else ""
-            policy_text = row.get(policy_column, "")
+            policy_text = _resolve_policy_text(row, policy_column)
 
             if pd.isna(policy_text) or len(str(policy_text).strip()) < 100:
                 logger.warning(f"Skipping app {app_id}: empty or short policy")
-                return {
-                    "app_id": app_id,
-                    "app_name": app_name,
-                    "error": "empty_or_short_policy",
-                    "data_collection_disclosure": False,
-                    "data_use_purpose_specification": False,
-                    "third_party_sharing_disclosure": False,
-                    "third_party_list": "",
-                    "third_party_data_shared": "",
-                    "parental_consent_mechanism": False,
-                    "coppa_ferpa_compliance_mention": False,
-                    "data_retention_policy": False,
-                    "user_data_rights": False,
-                    "data_security_encryption": False,
-                    "tracking_technologies_disclosure": False,
-                    **_get_empty_coppa_fields(),
-                    **_get_empty_gdpr_fields(),
-                }
+                return _build_error_result(app_id, app_name, "empty_or_short_policy")
 
             analysis = await self.analyze_policy_async(str(policy_text), app_id)
 
             if analysis:
-                third_party_list = analysis.get("third_party_list", [])
-                third_party_details = analysis.get("third_party_details", [])
-                third_party_data_shared = []
-                for detail in third_party_details:
-                    name = detail.get("name", "Unknown")
-                    purpose = detail.get("purpose", "Not specified")
-                    data_types = detail.get("data_shared", [])
-                    data_str = ", ".join(data_types) if data_types else "Not specified"
-                    third_party_data_shared.append(f"{name} ({purpose}): {data_str}")
-
-                return {
-                    "app_id": app_id,
-                    "app_name": app_name,
-                    "data_collection_disclosure": analysis.get("data_collection_disclosure", False),
-                    "data_use_purpose_specification": analysis.get("data_use_purpose_specification", False),
-                    "third_party_sharing_disclosure": analysis.get("third_party_sharing_disclosure", False),
-                    "third_party_list": "; ".join(third_party_list) if third_party_list else "",
-                    "third_party_data_shared": " | ".join(third_party_data_shared) if third_party_data_shared else "",
-                    "parental_consent_mechanism": analysis.get("parental_consent_mechanism", False),
-                    "coppa_ferpa_compliance_mention": analysis.get("coppa_ferpa_compliance_mention", False),
-                    "data_retention_policy": analysis.get("data_retention_policy", False),
-                    "user_data_rights": analysis.get("user_data_rights", False),
-                    "data_security_encryption": analysis.get("data_security_encryption", False),
-                    "tracking_technologies_disclosure": analysis.get("tracking_technologies_disclosure", False),
-                    **_extract_coppa_fields(analysis),
-                    **_extract_gdpr_fields(analysis),
-                }
+                return _build_success_result(app_id, app_name, analysis)
             else:
-                return {
-                    "app_id": app_id,
-                    "app_name": app_name,
-                    "error": "analysis_failed",
-                    "data_collection_disclosure": False,
-                    "data_use_purpose_specification": False,
-                    "third_party_sharing_disclosure": False,
-                    "third_party_list": "",
-                    "third_party_data_shared": "",
-                    "parental_consent_mechanism": False,
-                    "coppa_ferpa_compliance_mention": False,
-                    "data_retention_policy": False,
-                    "user_data_rights": False,
-                    "data_security_encryption": False,
-                    "tracking_technologies_disclosure": False,
-                    **_get_empty_coppa_fields(),
-                    **_get_empty_gdpr_fields(),
-                }
+                return _build_error_result(app_id, app_name, "analysis_failed")
 
     async def process_batch_concurrent(
         self,
@@ -549,81 +690,18 @@ class PolicyAnalyzer:
 
             app_id = row.get(id_column, f"app_{idx}")
             app_name = row.get(name_column, "") if name_column in row else ""
-            policy_text = row.get(policy_column, "")
+            policy_text = _resolve_policy_text(row, policy_column)
 
             # Skip empty policies
             if pd.isna(policy_text) or len(str(policy_text).strip()) < 100:
-                result = {
-                    "app_id": app_id,
-                    "app_name": app_name,
-                    "error": "empty_or_short_policy",
-                    "data_collection_disclosure": False,
-                    "data_use_purpose_specification": False,
-                    "third_party_sharing_disclosure": False,
-                    "third_party_list": "",
-                    "third_party_data_shared": "",
-                    "parental_consent_mechanism": False,
-                    "coppa_ferpa_compliance_mention": False,
-                    "data_retention_policy": False,
-                    "user_data_rights": False,
-                    "data_security_encryption": False,
-                    "tracking_technologies_disclosure": False,
-                    **_get_empty_coppa_fields(),
-                    **_get_empty_gdpr_fields(),
-                }
+                result = _build_error_result(app_id, app_name, "empty_or_short_policy")
                 logger.warning(f"Skipping app {app_id}: empty or short policy")
             else:
                 analysis = self.analyze_policy(str(policy_text), app_id)
                 if analysis:
-                    # Format third party information for CSV output
-                    third_party_list = analysis.get("third_party_list", [])
-                    third_party_details = analysis.get("third_party_details", [])
-
-                    # Create formatted string for third party data shared
-                    third_party_data_shared = []
-                    for detail in third_party_details:
-                        name = detail.get("name", "Unknown")
-                        purpose = detail.get("purpose", "Not specified")
-                        data_types = detail.get("data_shared", [])
-                        data_str = ", ".join(data_types) if data_types else "Not specified"
-                        third_party_data_shared.append(f"{name} ({purpose}): {data_str}")
-
-                    result = {
-                        "app_id": app_id,
-                        "app_name": app_name,
-                        "data_collection_disclosure": analysis.get("data_collection_disclosure", False),
-                        "data_use_purpose_specification": analysis.get("data_use_purpose_specification", False),
-                        "third_party_sharing_disclosure": analysis.get("third_party_sharing_disclosure", False),
-                        "third_party_list": "; ".join(third_party_list) if third_party_list else "",
-                        "third_party_data_shared": " | ".join(third_party_data_shared) if third_party_data_shared else "",
-                        "parental_consent_mechanism": analysis.get("parental_consent_mechanism", False),
-                        "coppa_ferpa_compliance_mention": analysis.get("coppa_ferpa_compliance_mention", False),
-                        "data_retention_policy": analysis.get("data_retention_policy", False),
-                        "user_data_rights": analysis.get("user_data_rights", False),
-                        "data_security_encryption": analysis.get("data_security_encryption", False),
-                        "tracking_technologies_disclosure": analysis.get("tracking_technologies_disclosure", False),
-                        **_extract_coppa_fields(analysis),
-                        **_extract_gdpr_fields(analysis),
-                    }
+                    result = _build_success_result(app_id, app_name, analysis)
                 else:
-                    result = {
-                        "app_id": app_id,
-                        "app_name": app_name,
-                        "error": "analysis_failed",
-                        "data_collection_disclosure": False,
-                        "data_use_purpose_specification": False,
-                        "third_party_sharing_disclosure": False,
-                        "third_party_list": "",
-                        "third_party_data_shared": "",
-                        "parental_consent_mechanism": False,
-                        "coppa_ferpa_compliance_mention": False,
-                        "data_retention_policy": False,
-                        "user_data_rights": False,
-                        "data_security_encryption": False,
-                        "tracking_technologies_disclosure": False,
-                        **_get_empty_coppa_fields(),
-                        **_get_empty_gdpr_fields(),
-                    }
+                    result = _build_error_result(app_id, app_name, "analysis_failed")
 
             results.append(result)
 
@@ -672,35 +750,10 @@ class PolicyAnalyzer:
         analysis = self.analyze_policy(policy_text, app_id)
 
         if analysis:
-            # Format third party information for output
-            third_party_list = analysis.get("third_party_list", [])
-            third_party_details = analysis.get("third_party_details", [])
-
-            # Create formatted string for third party data shared
-            third_party_data_shared = []
-            for detail in third_party_details:
-                name = detail.get("name", "Unknown")
-                purpose = detail.get("purpose", "Not specified")
-                data_types = detail.get("data_shared", [])
-                data_str = ", ".join(data_types) if data_types else "Not specified"
-                third_party_data_shared.append(f"{name} ({purpose}): {data_str}")
-
-            return {
-                "app_id": app_id,
-                "data_collection_disclosure": analysis.get("data_collection_disclosure", False),
-                "data_use_purpose_specification": analysis.get("data_use_purpose_specification", False),
-                "third_party_sharing_disclosure": analysis.get("third_party_sharing_disclosure", False),
-                "third_party_list": "; ".join(third_party_list) if third_party_list else "",
-                "third_party_data_shared": " | ".join(third_party_data_shared) if third_party_data_shared else "",
-                "parental_consent_mechanism": analysis.get("parental_consent_mechanism", False),
-                "coppa_ferpa_compliance_mention": analysis.get("coppa_ferpa_compliance_mention", False),
-                "data_retention_policy": analysis.get("data_retention_policy", False),
-                "user_data_rights": analysis.get("user_data_rights", False),
-                "data_security_encryption": analysis.get("data_security_encryption", False),
-                "tracking_technologies_disclosure": analysis.get("tracking_technologies_disclosure", False),
-                # Include full COPPA and GDPR analysis objects for JSON output
-                "coppa_analysis": analysis.get("coppa_analysis", {}),
-                "gdpr_analysis": analysis.get("gdpr_analysis", {}),
-            }
+            result = _build_success_result(app_id, "", analysis)
+            # Include full COPPA and GDPR analysis objects for JSON output
+            result["coppa_analysis"] = analysis.get("coppa_analysis", {})
+            result["gdpr_analysis"] = analysis.get("gdpr_analysis", {})
+            return result
         else:
             return {"app_id": app_id, "error": "analysis_failed"}

@@ -84,9 +84,9 @@ Examples:
     # Processing options
     parser.add_argument(
         "--model",
-        default="gpt-5-nano",
-        choices=["gpt-5-nano", "gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
-        help="OpenAI model to use (default: gpt-5-nano, cheapest option)"
+        default="gpt-5.1",
+        choices=["gpt-5.1", "gpt-4.1", "gpt-4.1-mini", "gpt-4o-mini", "gpt-4o", "gpt-5-nano", "gpt-3.5-turbo"],
+        help="OpenAI model to use (default: gpt-5.1, recommended for research-quality analysis)"
     )
     parser.add_argument(
         "--delay",
@@ -110,6 +110,12 @@ Examples:
         type=int,
         default=10,
         help="Maximum concurrent API calls when using --concurrent (default: 10)"
+    )
+    parser.add_argument(
+        "--policy-column-primary",
+        default=None,
+        help="Primary column for policy text (default: uses --policy-column). "
+             "When processing Master Data.csv, use 'ppCompany'."
     )
 
     # API key option
@@ -171,12 +177,15 @@ Examples:
             print(f"Processing policies from {args.input}")
             print(f"Results will be saved to {args.output}")
 
+            # Use primary column flag if provided, otherwise fall back to --policy-column
+            effective_policy_column = args.policy_column_primary or args.policy_column
+
             if args.concurrent:
                 print(f"Using concurrent processing with max {args.max_concurrent} parallel requests")
                 results = asyncio.run(analyzer.process_batch_concurrent(
                     input_file=args.input,
                     output_file=args.output,
-                    policy_column=args.policy_column,
+                    policy_column=effective_policy_column,
                     id_column=args.id_column,
                     name_column=args.name_column,
                     max_concurrent=args.max_concurrent,
@@ -186,7 +195,7 @@ Examples:
                 results = analyzer.process_batch(
                     input_file=args.input,
                     output_file=args.output,
-                    policy_column=args.policy_column,
+                    policy_column=effective_policy_column,
                     id_column=args.id_column,
                     name_column=args.name_column,
                     delay=args.delay,

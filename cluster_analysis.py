@@ -1,8 +1,8 @@
 """
 Cluster analysis and compliance scoring for analyzed privacy policies.
 
-Clusters policies using KMeans on 8 disclosure columns, computes a compliance
-score from 13 boolean columns, and outputs an augmented CSV.
+Clusters policies using KMeans on 14 disclosure columns, computes a compliance
+score from 35 boolean columns, and outputs an augmented CSV.
 """
 
 import argparse
@@ -12,24 +12,27 @@ import sys
 import pandas as pd
 from sklearn.cluster import KMeans
 
+from src.analyzer import TABLE1_BOOLEAN_FIELDS
+
 CLUSTERING_COLUMNS = [
-    "data_collection_disclosure",
-    "data_use_purpose_specification",
-    "third_party_sharing_disclosure",
-    "tracking_technologies_disclosure",
-    "data_retention_policy",
-    "user_data_rights",
-    "data_security_encryption",
-    "parental_consent_mechanism",
+    # Use the 14 most interpretable indicators for clustering
+    "ci_controller_identity",
+    "td_categories_disclosed",
+    "pu_purposes_stated",
+    "ts_recipients_disclosed",
+    "re_retention_period",
+    "ur_right_erasure",
+    "ur_parent_delete_right",
+    "sec_coppa_safeguards",
+    "sec_gdpr_measures",
+    "cm_parental_consent_procedures",
+    "up_material_changes_notice",
+    "td_children_data_types",
+    "pu_children_data_use",
+    "it_eu_transfers",
 ]
 
-SCORING_COLUMNS = CLUSTERING_COLUMNS + [
-    "coppa_ferpa_compliance_mention",
-    "coppa_mentions",
-    "coppa_claims_compliance",
-    "gdpr_mentions",
-    "gdpr_claims_compliance",
-]
+SCORING_COLUMNS = TABLE1_BOOLEAN_FIELDS
 
 
 def _coerce_to_bool(series: pd.Series) -> pd.Series:
@@ -62,7 +65,7 @@ def load_and_validate(input_path: str) -> pd.DataFrame:
 
 
 def run_clustering(df: pd.DataFrame) -> pd.DataFrame:
-    """Run KMeans clustering on the 8 disclosure columns."""
+    """Run KMeans clustering on the 14 disclosure columns."""
     X = df[CLUSTERING_COLUMNS].fillna(0).astype(int)
     kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
     df["compliance_cluster"] = kmeans.fit_predict(X)
@@ -70,10 +73,15 @@ def run_clustering(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_compliance_score(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute a per-row compliance score as a percentage of 13 booleans."""
-    df["compliance_score"] = (
-        df[SCORING_COLUMNS].fillna(False).astype(int).sum(axis=1) / len(SCORING_COLUMNS) * 100
-    ).round(2)
+    """Use pre-computed composite scores from analyzer output."""
+    # If composite scores are already in the dataframe, use them directly
+    if "overall_composite_pct" in df.columns:
+        df["compliance_score"] = df["overall_composite_pct"]
+    else:
+        # Fallback: compute from boolean columns
+        df["compliance_score"] = (
+            df[SCORING_COLUMNS].fillna(False).astype(int).sum(axis=1) / len(SCORING_COLUMNS) * 100
+        ).round(2)
     return df
 
 
