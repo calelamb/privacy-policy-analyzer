@@ -1,13 +1,71 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Menu, X, Shield } from 'lucide-react'
+import { Menu, X, Shield, ChevronDown } from 'lucide-react'
 
-const navLinks = [
+const mainLinks = [
   { path: '/', label: 'Home' },
   { path: '/research', label: 'Research' },
   { path: '/results', label: 'Results' },
-  { path: '/team', label: 'Team' },
 ]
+
+const toolLinks = [
+  { path: '/analyze', label: 'Analyze a Policy' },
+  { path: '/explorer', label: 'App Explorer' },
+  { path: '/compare', label: 'Compare Apps' },
+]
+
+const referenceLinks = [
+  { path: '/resources', label: 'Resources' },
+  { path: '/legislation', label: 'Legislation' },
+]
+
+function Dropdown({ label, links, location }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const isActive = links.some((l) => l.path === location.pathname)
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`inline-flex items-center gap-1 px-3.5 py-1.5 rounded text-sm transition-colors ${
+          isActive
+            ? 'bg-white/15 text-white font-medium'
+            : 'text-white/70 hover:text-white hover:bg-white/10'
+        }`}
+      >
+        {label}
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-48 bg-navy-light border border-white/10 rounded-lg shadow-xl overflow-hidden z-50">
+          {links.map(({ path, label: linkLabel }) => (
+            <Link
+              key={path}
+              to={path}
+              onClick={() => setOpen(false)}
+              className={`block px-4 py-2.5 text-sm transition-colors ${
+                location.pathname === path
+                  ? 'bg-white/15 text-white font-medium'
+                  : 'text-white/70 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              {linkLabel}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Navbar() {
   const [open, setOpen] = useState(false)
@@ -25,7 +83,7 @@ export default function Navbar() {
           </Link>
 
           <div className="hidden md:flex items-center gap-0.5">
-            {navLinks.map(({ path, label }) => (
+            {mainLinks.map(({ path, label }) => (
               <Link
                 key={path}
                 to={path}
@@ -38,6 +96,18 @@ export default function Navbar() {
                 {label}
               </Link>
             ))}
+            <Dropdown label="Tools" links={toolLinks} location={location} />
+            <Dropdown label="Reference" links={referenceLinks} location={location} />
+            <Link
+              to="/team"
+              className={`px-3.5 py-1.5 rounded text-sm transition-colors ${
+                location.pathname === '/team'
+                  ? 'bg-white/15 text-white font-medium'
+                  : 'text-white/70 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              Team
+            </Link>
           </div>
 
           <button
@@ -52,7 +122,7 @@ export default function Navbar() {
       {open && (
         <div className="md:hidden bg-navy border-t border-white/10">
           <div className="px-4 py-2 space-y-0.5">
-            {navLinks.map(({ path, label }) => (
+            {mainLinks.map(({ path, label }) => (
               <Link
                 key={path}
                 to={path}
@@ -66,6 +136,51 @@ export default function Navbar() {
                 {label}
               </Link>
             ))}
+            <p className="px-3.5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+              Tools
+            </p>
+            {toolLinks.map(({ path, label }) => (
+              <Link
+                key={path}
+                to={path}
+                onClick={() => setOpen(false)}
+                className={`block px-3.5 py-2 rounded text-sm ${
+                  location.pathname === path
+                    ? 'bg-white/15 text-white font-medium'
+                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {label}
+              </Link>
+            ))}
+            <p className="px-3.5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+              Reference
+            </p>
+            {referenceLinks.map(({ path, label }) => (
+              <Link
+                key={path}
+                to={path}
+                onClick={() => setOpen(false)}
+                className={`block px-3.5 py-2 rounded text-sm ${
+                  location.pathname === path
+                    ? 'bg-white/15 text-white font-medium'
+                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {label}
+              </Link>
+            ))}
+            <Link
+              to="/team"
+              onClick={() => setOpen(false)}
+              className={`block px-3.5 py-2 rounded text-sm ${
+                location.pathname === '/team'
+                  ? 'bg-white/15 text-white font-medium'
+                  : 'text-white/70 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              Team
+            </Link>
           </div>
         </div>
       )}
