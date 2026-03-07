@@ -347,6 +347,7 @@ class PolicyAnalyzer:
 
     # Pricing per 1M tokens - update as needed
     MODEL_PRICING = {
+        "gpt-5.4":      {"input": 2.00,  "output": 8.00},  # placeholder — update when OpenAI publishes pricing
         "gpt-5.1":      {"input": 2.00,  "output": 8.00},
         "gpt-4.1":      {"input": 2.00,  "output": 8.00},
         "gpt-4.1-mini": {"input": 0.40,  "output": 1.60},
@@ -356,7 +357,7 @@ class PolicyAnalyzer:
         "gpt-3.5-turbo":{"input": 0.50,  "output": 1.50},
     }
 
-    def __init__(self, api_key: str, model: str = "gpt-5.1"):
+    def __init__(self, api_key: str, model: str = "gpt-5.4"):
         """
         Initialize the PolicyAnalyzer.
 
