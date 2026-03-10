@@ -21,7 +21,7 @@ FINISHED_DATASET    = "privacy policy dataset finished.csv"
 SECOND_PASS_OUTPUT  = "data/output/second_pass_results.csv"
 MERGED_OUTPUT       = "data/output/full_results_v2_merged.csv"
 MODEL               = "gpt-5.4"
-MAX_CONCURRENT      = 10
+MAX_CONCURRENT      = 20
 POLICY_COLUMN       = "ppCompany"
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -36,13 +36,13 @@ def main():
     first = pd.read_csv(FIRST_PASS_OUTPUT, low_memory=False)
     print(f"First pass results loaded: {len(first)} rows")
 
-    # 2. Identify skipped apps
-    if 'error_type' not in first.columns:
-        print("ERROR: 'error_type' column not found in first pass output.")
-        print("Cannot identify skipped apps.")
+    # 2. Identify skipped apps (column is 'error', not 'error_type')
+    error_col = 'error' if 'error' in first.columns else 'error_type'
+    if error_col not in first.columns:
+        print("ERROR: No error column found in first pass output.")
         sys.exit(1)
 
-    skipped = first[first['error_type'] == 'empty_or_short_policy']['app_id'].astype(str).tolist()
+    skipped = first[first[error_col] == 'empty_or_short_policy']['app_id'].astype(str).tolist()
     print(f"Apps skipped in first pass: {len(skipped)}")
 
     # 3. Load finished dataset and find skipped apps with policy text
@@ -96,8 +96,9 @@ def main():
     print(f"\nSecond pass complete: {len(second)} rows")
 
     # Remove the skipped placeholders from first pass and replace with second pass results
-    first_cleaned = first[first['error_type'] != 'empty_or_short_policy'].copy()
+    first_cleaned = first[first[error_col] != 'empty_or_short_policy'].copy()
     merged = pd.concat([first_cleaned, second], ignore_index=True)
+    merged['app_id'] = merged['app_id'].astype(str)
     merged = merged.sort_values('app_id').reset_index(drop=True)
     merged.to_csv(MERGED_OUTPUT, index=False)
 

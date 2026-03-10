@@ -1,141 +1,214 @@
-# Privacy Policy Analyzer for K-12 Educational Apps
+# Privacy Policy Analyzer — K-12 EdTech (v2)
 
-An automated tool for analyzing privacy policies of educational applications, extracting 9 key privacy indicators based on academic research frameworks for K-12 app privacy risk assessment.
+An automated tool for analyzing privacy policies of K-12 educational applications against GDPR and COPPA regulatory frameworks. Version 2 extracts **35 boolean indicators** that map 1:1 to Table 1 of the AMCIS 2026 paper, along with evidence strings, nuance fields, and composite regulatory scores.
 
-## Overview
+---
 
-This tool processes privacy policy texts and extracts boolean indicators for:
-- Data collection disclosure
-- Data use purpose specification
-- Third-party sharing practices
-- Parental consent mechanisms
-- COPPA/FERPA compliance
-- Data retention policies
-- User data rights
-- Security measures
-- Tracking technologies
+## What's New in v2
+
+| Feature | v1 | v2 |
+|---|---|---|
+| Indicators | 9 broad booleans | 35 specific booleans (Table 1) |
+| Evidence strings | None | Every indicator has a companion `_evidence` field |
+| Regulatory scores | None | GDPR %, COPPA %, Overall % composite scores |
+| Nuance fields | None | Sharing direction, retention specificity, security specificity, consent specificity |
+| Retention period | Not extracted | Literal phrase extracted verbatim from policy |
+| Model | gpt-4o / gpt-5-nano | GPT-5.4 (temperature=0, deterministic) |
+| Policy source | Single column | Runtime construction from `ppCompany` + `ppPlatform` |
+
+---
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-# Clone the repository
 git clone <repository-url>
 cd privacy_policy_analyzer
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Set up environment
 cp .env.example .env
-# Edit .env with your OpenAI API key
+# Add your OpenAI API key to .env
 ```
 
-### Basic Usage
+### Full Dataset Run
 
 ```bash
-# Analyze a batch of policies from CSV
-python -m src.main data/input/policies.csv data/output/results.csv
-
-# Analyze a single policy file
-python -m src.main --single data/input/example_policy.txt
-
-# Use custom column names
-python -m src.main data/input/policies.csv data/output/results.csv \
-  --policy-column "privacy_policy" \
-  --id-column "application_id"
+python -m src.main "Master Data.csv" data/output/results.csv \
+  --policy-column-primary ppCompany \
+  --model gpt-5.4 \
+  --concurrent \
+  --max-concurrent 20
 ```
+
+### Resume an Interrupted Run
+
+```bash
+python resume_first_pass.py
+```
+
+Automatically detects which apps were successfully analyzed and retries only the failures. Safe to re-run multiple times.
+
+### Second Pass (Recover Skipped Apps)
+
+```bash
+python second_pass.py
+```
+
+Runs the analyzer on apps that were skipped due to missing/short policy text in `Master Data.csv`, pulling richer policy text from `privacy policy dataset finished.csv`. Merges results into `data/output/full_results_v2_merged.csv`.
+
+---
 
 ## Input Format
 
-The input CSV should have at minimum:
-- `app_id`: Unique identifier for each app
-- `policy_text`: Full privacy policy text
-- `app_name`: (Optional) Application name
+The input CSV must contain:
+
+| Column | Required | Description |
+|---|---|---|
+| `app_id` | Yes | Unique identifier |
+| `app_name` | No | Application name |
+| `ppCompany` | Preferred | Vendor's full privacy policy text |
+| `ppPlatform` | Fallback | Platform (Apple/Google) privacy policy text |
+
+The analyzer automatically constructs policy text at runtime:
+1. `ppCompany` if ≥ 200 chars (preferred)
+2. `ppPlatform` if `ppCompany` is short/absent and `ppPlatform` ≥ 200 chars
+3. Concatenation of both if each is ≥ 100 chars
+4. Apps with < 100 chars combined are skipped (`error = empty_or_short_policy`)
+
+---
 
 ## Output Format
 
-The tool generates a CSV with the following columns:
+The output CSV has **102 columns**. Key column groups:
 
-### Boolean Indicators (TRUE/FALSE)
-- `data_collection_disclosure`
-- `data_use_purpose_specification`
-- `third_party_sharing_disclosure`
-- `parental_consent_mechanism`
-- `coppa_ferpa_compliance_mention`
-- `data_retention_policy`
-- `user_data_rights`
-- `data_security_encryption`
-- `tracking_technologies_disclosure`
+### Identifiers
+- `app_id`, `app_name`, `error`
 
-### Third-Party Data Sharing Details
-- `third_party_list`: Semicolon-separated list of all third parties mentioned in the policy (e.g., "Google Analytics; AWS; Facebook")
-- `third_party_data_shared`: Detailed breakdown of what specific data is shared with each third party, pipe-separated (e.g., "Google Analytics (analytics): IP address, device ID, usage data | AWS (storage): all user data")
+### 35 Boolean Indicators (TRUE/FALSE)
+All indicators from Table 1, grouped by regulatory category:
 
-## Advanced Options
+**Controller Identity (ci_)**
+`ci_controller_identity`, `ci_dpo_contact`, `ci_operator_list`
+
+**Policy Accessibility (pa_)**
+`pa_concise_transparent`, `pa_prominent_link`
+
+**Transparency & Data (td_)**
+`td_categories_disclosed`, `td_persistent_identifiers`, `td_sensitive_data`, `td_indirect_data_source`
+
+**Purpose & Use (pu_)**
+`pu_purposes_stated`, `pu_children_purpose`, `pu_secondary_use`
+
+**Third-Party Sharing (ts_)**
+`ts_recipients_disclosed`, `ts_third_party_purpose`, `ts_international_transfers`
+
+**Retention & Erasure (re_)**
+`re_retention_period`, `re_retention_specificity` *(enum)*, `re_retention_stated_period` *(literal phrase)*, `re_children_retention`
+
+**Security (sec_)**
+`sec_measures_listed`, `sec_specificity` *(enum)*, `sec_breach_notification`, `sec_coppa_safeguards`
+
+**Consent Mechanisms (cm_)**
+`cm_consent_required`, `cm_parental_consent_procedures`, `cm_consent_specificity` *(enum)*
+
+**User Rights — GDPR (ur_)**
+`ur_right_access`, `ur_right_rectification`, `ur_right_erasure`, `ur_right_restriction`,
+`ur_right_portability`, `ur_right_objection`, `ur_right_withdraw_consent`, `ur_right_supervisory_complaint`
+
+**User Rights — COPPA Parental (ur_)**
+`ur_parent_review_right`, `ur_parent_deletion_right`, `ur_parent_refuse_right`
+
+**Administration & Profiling (adm_)**
+`adm_profiling_disclosure`, `adm_automated_decision`
+
+**Data Sharing Direction (re_)**
+`re_sharing_direction` *(enum)*
+
+### Evidence Fields
+Every boolean indicator has a companion `_evidence` field (e.g., `ci_controller_identity_evidence`) containing the exact quote or paraphrase from the policy the model used to reach its conclusion. For FALSE indicators, the evidence explains what language would be needed to satisfy the requirement.
+
+### Composite Scores
+- `gdpr_composite_score` — count of GDPR indicators TRUE (out of 21)
+- `gdpr_composite_pct` — GDPR score as percentage
+- `coppa_composite_score` — count of COPPA indicators TRUE (out of 15)
+- `coppa_composite_pct` — COPPA score as percentage
+- `overall_composite_score` — count across all 35 indicators
+- `overall_composite_pct` — overall score as percentage
+
+### Enum Field Values
+
+| Field | Possible Values |
+|---|---|
+| `re_sharing_direction` | `shares`, `does_not_share`, `conditional`, `vague_or_silent` |
+| `re_retention_specificity` | `specific_timeframe`, `until_deleted`, `as_long_as_necessary`, `indefinite_or_silent` |
+| `sec_specificity` | `specific_measures`, `general_language`, `silent` |
+| `cm_consent_specificity` | `method_described`, `mentioned_no_method`, `not_applicable` |
+
+---
+
+## CLI Options
 
 ```bash
-# Use a different model (default: gpt-5-nano, cheapest)
-python -m src.main input.csv output.csv --model gpt-4o-mini
+python -m src.main INPUT OUTPUT [options]
 
-# Adjust rate limiting delay (default: 0.5 seconds)
-python -m src.main input.csv output.csv --delay 1.0
-
-# Resume from specific index after interruption
-python -m src.main input.csv output.csv --resume-from 500
-
-# Output as JSON
-python -m src.main --single policy.txt --json
+Options:
+  --model               Model to use (default: gpt-5.4)
+                        Choices: gpt-5.4, gpt-5.1, gpt-4.1, gpt-4.1-mini,
+                                 gpt-4o, gpt-4o-mini, gpt-5-nano, gpt-3.5-turbo
+  --policy-column       Primary policy text column (default: policy_text)
+  --policy-column-primary  Alternative primary column with ppCompany/ppPlatform fallback
+  --concurrent          Enable async concurrent processing
+  --max-concurrent N    Max parallel API requests (default: 10, recommended: 20)
+  --delay SECONDS       Delay between requests in non-concurrent mode (default: 0.5)
 ```
 
-## Cost Estimates
+---
 
-Using GPT-5-nano (recommended, cheapest):
-- Input: $0.05 per 1M tokens
-- Output: $0.40 per 1M tokens
-- Per policy: ~$0.0002-0.0005
-- 140,000 policies: ~$30-70 total
+## Dataset Results (Full Run — March 2026)
 
-## Research Framework
+| Metric | Value |
+|---|---|
+| Total apps in dataset | 1,694 |
+| Successfully analyzed | 1,592 |
+| Skipped (no policy text) | 100 |
+| Failed | 2 (Matific, Newsweek) |
+| Mean overall score | 36.9% |
+| Mean GDPR score | 48.1% |
+| Mean COPPA score | 23.9% |
+| Model used | GPT-5.4 |
+| Estimated cost | ~$45 |
 
-This tool implements privacy evaluation criteria from:
-- Common Sense Media State of Kids' Privacy Report
-- FTC/iKeepSafe COPPA Compliance Guidelines
-- Academic research on K-12 EdTech privacy policies
+### Key Findings
+- `ci_operator_list`: 0.0% — no app provides the COPPA-required operator list
+- `cm_parental_consent_procedures`: 4.6% — virtually no apps describe how they obtain parental consent
+- `pa_concise_transparent`: 3.3% — almost no policies meet the concise/transparent accessibility standard
+- GDPR user rights (access, erasure, rectification) score 64–72% — better disclosed than COPPA-specific requirements
 
-## Troubleshooting
+---
 
-### Common Issues
+## Project Structure
 
-1. **API Key Error**: Ensure `OPENAI_API_KEY` is set in `.env` file
-2. **Rate Limits**: Tool automatically handles rate limits with retry logic
-3. **Large Policies**: Policies >100k chars are automatically truncated
-4. **Crash Recovery**: Use `--resume-from` flag to continue from last checkpoint
-
-### Error Handling
-
-The tool marks policies with errors but continues processing:
-- `empty_or_short_policy`: Policy text <100 characters
-- `analysis_failed`: API error during analysis
-
-## Development
-
-```bash
-# Run tests
-pytest tests/
-
-# Format code
-black src/
-
-# Lint
-flake8 src/
+```
+privacy_policy_analyzer/
+├── src/
+│   ├── main.py              # CLI entry point
+│   ├── analyzer.py          # Core analysis logic, composite scoring
+│   ├── models.py            # Pydantic output schema (35 indicators)
+│   └── prompts.py           # System prompt (14 regulatory categories)
+├── cluster_analysis.py      # KMeans clustering on Table 1 indicators
+├── resume_first_pass.py     # Resume an interrupted analysis run
+├── second_pass.py           # Second pass for skipped apps
+├── data/
+│   ├── input/               # Input datasets
+│   └── output/              # Analysis results
+│       └── K12_Privacy_Analysis_v2_Full_Dataset.csv  # Final merged dataset
+└── www/                     # Research website (React/Vite)
 ```
 
-## License
+---
 
-For academic research use. Please cite appropriately if used in publications.
+## Research Context
 
-## Support
+This tool was developed as part of a BYU K-12 EdTech Privacy study accepted at **AMCIS 2026**. The 35 indicators align with the paper's Table 1 regulatory framework, enabling reproducible automated analysis at scale.
 
-For issues or questions, please open an issue on the repository.
+A companion platform, **SafeApps Utah**, is under development to make this data accessible to Utah K-12 teachers and administrators.
