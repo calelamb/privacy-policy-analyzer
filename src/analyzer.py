@@ -1,5 +1,14 @@
 """
-Main analyzer module for processing privacy policies.
+Core analysis pipeline for the v2 privacy policy research workflow.
+
+This module is the authoritative implementation of the current analyzer. It is
+responsible for:
+
+- converting the Pydantic schema into an OpenAI-compatible JSON schema
+- selecting the best policy text from research datasets
+- calling the OpenAI API in sync or async mode
+- flattening structured output into CSV-friendly rows
+- computing GDPR, COPPA, and overall composite scores
 """
 
 import os
@@ -31,12 +40,26 @@ def _make_openai_compatible_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     - anyOf with null (for Optional types)
     - allOf constructs
     - title fields
+
+    Args:
+        schema: Raw JSON schema produced by ``PolicyAnalysisResult``.
+
+    Returns:
+        A deep-copied schema dictionary with unsupported constructs removed or
+        inlined so it can be used as an OpenAI ``json_schema`` response format.
     """
     schema = copy.deepcopy(schema)
     defs = schema.pop("$defs", {})
 
     def resolve_refs(obj: Any) -> Any:
-        """Recursively resolve $ref references and clean up schema."""
+        """Recursively inline schema fragments and remove unsupported keys.
+
+        Args:
+            obj: A schema fragment represented as a dictionary, list, or scalar.
+
+        Returns:
+            The transformed schema fragment with references resolved.
+        """
         if isinstance(obj, dict):
             # Handle $ref
             if "$ref" in obj:
@@ -118,7 +141,15 @@ def build_policy_text(row: Any) -> str:
 
 
 def _extract_coppa_fields(analysis: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract COPPA analysis fields for CSV output."""
+    """Flatten the nested COPPA block into top-level CSV columns.
+
+    Args:
+        analysis: Structured model output for a single policy.
+
+    Returns:
+        A dictionary containing the ``coppa_*`` columns expected in the output
+        dataset.
+    """
     coppa = analysis.get("coppa_analysis", {})
     return {
         "coppa_mentions": coppa.get("mentions_coppa", False),
@@ -132,7 +163,15 @@ def _extract_coppa_fields(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _extract_gdpr_fields(analysis: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract GDPR analysis fields for CSV output."""
+    """Flatten the nested GDPR block into top-level CSV columns.
+
+    Args:
+        analysis: Structured model output for a single policy.
+
+    Returns:
+        A dictionary containing the ``gdpr_*`` columns expected in the output
+        dataset.
+    """
     gdpr = analysis.get("gdpr_analysis", {})
     return {
         "gdpr_mentions": gdpr.get("mentions_gdpr", False),
@@ -146,7 +185,12 @@ def _extract_gdpr_fields(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _get_empty_coppa_fields() -> Dict[str, Any]:
-    """Return empty COPPA fields for error cases."""
+    """Return blank COPPA values for skipped or failed analyses.
+
+    Returns:
+        A dictionary shaped like the flattened COPPA output fields with safe
+        defaults for error rows.
+    """
     return {
         "coppa_mentions": False,
         "coppa_claims_compliance": False,
@@ -159,7 +203,12 @@ def _get_empty_coppa_fields() -> Dict[str, Any]:
 
 
 def _get_empty_gdpr_fields() -> Dict[str, Any]:
-    """Return empty GDPR fields for error cases."""
+    """Return blank GDPR values for skipped or failed analyses.
+
+    Returns:
+        A dictionary shaped like the flattened GDPR output fields with safe
+        defaults for error rows.
+    """
     return {
         "gdpr_mentions": False,
         "gdpr_claims_compliance": False,
@@ -205,7 +254,16 @@ ALL_INDICATOR_FIELDS = list(dict.fromkeys(GDPR_INDICATOR_FIELDS + COPPA_INDICATO
 
 
 def _compute_composite_scores(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Compute GDPR, COPPA, and overall composite scores from indicator dict."""
+    """Compute GDPR, COPPA, and overall percentages from boolean indicators.
+
+    Args:
+        result: A partially flattened analysis dictionary containing the Table 1
+            boolean indicators.
+
+    Returns:
+        A dictionary with score counts and percentage values for GDPR, COPPA,
+        and the combined indicator set.
+    """
 
     def count_true(fields):
         return sum(1 for f in fields if result.get(f, False) is True)
@@ -254,7 +312,15 @@ TABLE1_ENUM_FIELDS = [
 
 
 def _extract_table1_fields(analysis: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract all Table 1 indicator booleans, evidence strings, and enum fields."""
+    """Flatten the core Table 1 indicators, evidence, and enum fields.
+
+    Args:
+        analysis: Structured model output for a single policy.
+
+    Returns:
+        A dictionary containing the canonical flat columns used in batch CSV
+        outputs.
+    """
     result = {}
     # Boolean indicators
     for field in TABLE1_BOOLEAN_FIELDS:
@@ -269,7 +335,12 @@ def _extract_table1_fields(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _get_empty_table1_fields() -> Dict[str, Any]:
-    """Return empty Table 1 fields for error/skip cases."""
+    """Return blank Table 1 indicator values for error rows.
+
+    Returns:
+        A dictionary with every Table 1 boolean, evidence, and enum field
+        populated with an empty-safe default.
+    """
     result = {}
     for field in TABLE1_BOOLEAN_FIELDS:
         result[field] = False
@@ -281,7 +352,16 @@ def _get_empty_table1_fields() -> Dict[str, Any]:
 
 
 def _build_success_result(app_id, app_name, analysis):
-    """Build result dict for a successful analysis."""
+    """Build the final output row for a successful policy analysis.
+
+    Args:
+        app_id: Application identifier from the input dataset.
+        app_name: Human-readable application name if available.
+        analysis: Structured model output returned by the analyzer.
+
+    Returns:
+        A flattened row ready to append to the output CSV.
+    """
     third_party_list = analysis.get("third_party_list", [])
     third_party_details = analysis.get("third_party_details", [])
     third_party_data_shared = []
@@ -307,7 +387,16 @@ def _build_success_result(app_id, app_name, analysis):
 
 
 def _build_error_result(app_id, app_name, error_type):
-    """Build result dict for an error/skip case."""
+    """Build the final output row for a skipped or failed policy analysis.
+
+    Args:
+        app_id: Application identifier from the input dataset.
+        app_name: Human-readable application name if available.
+        error_type: Stable error label such as ``empty_or_short_policy``.
+
+    Returns:
+        A flattened row with blank analysis fields and zeroed score columns.
+    """
     return {
         "app_id": app_id,
         "app_name": app_name,
@@ -327,7 +416,19 @@ def _build_error_result(app_id, app_name, error_type):
 
 
 def _resolve_policy_text(row, policy_column):
-    """Resolve policy text from specified column or ppCompany/ppPlatform fallback."""
+    """Resolve the best available policy text for a dataset row.
+
+    The analyzer first respects the explicitly requested policy column. If that
+    column is missing or too short, it falls back to the ``ppCompany`` /
+    ``ppPlatform`` selection logic used by the main research dataset.
+
+    Args:
+        row: A pandas row or row-like mapping.
+        policy_column: The preferred policy text column requested by the caller.
+
+    Returns:
+        The chosen policy text, or an empty string when no usable text exists.
+    """
     policy_text = row.get(policy_column, "")
     if pd.isna(policy_text) or len(str(policy_text).strip()) < 100:
         # Try building from ppCompany/ppPlatform if available
@@ -341,8 +442,11 @@ def _resolve_policy_text(row, policy_column):
 
 class PolicyAnalyzer:
     """
-    Analyzes privacy policies using OpenAI's API to extract boolean indicators
-    based on K-12 Educational App Privacy Policy Research Framework.
+    Analyze privacy policies using OpenAI structured outputs.
+
+    This class wraps both synchronous and asynchronous OpenAI clients and keeps
+    the research-specific concerns in one place: request construction, usage
+    tracking, retry behavior, batch orchestration, and CSV-safe flattening.
     """
 
     # Pricing per 1M tokens - update as needed
@@ -359,11 +463,11 @@ class PolicyAnalyzer:
 
     def __init__(self, api_key: str, model: str = "gpt-5.4"):
         """
-        Initialize the PolicyAnalyzer.
+        Initialize analyzer clients and usage tracking.
 
         Args:
-            api_key: OpenAI API key
-            model: OpenAI model to use (default: gpt-5.1)
+            api_key: OpenAI API key used for both sync and async clients.
+            model: OpenAI model name used for structured extraction requests.
         """
         self.client = openai.OpenAI(api_key=api_key)
         self.async_client = openai.AsyncOpenAI(api_key=api_key)
@@ -373,7 +477,7 @@ class PolicyAnalyzer:
         logger.info(f"Initialized PolicyAnalyzer with model: {model}")
 
     def _reset_usage(self):
-        """Reset usage counters."""
+        """Reset in-memory token and request counters for the current session."""
         self._usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -384,7 +488,11 @@ class PolicyAnalyzer:
         }
 
     def _record_usage(self, response):
-        """Record usage from an API response."""
+        """Record token usage from a successful API response.
+
+        Args:
+            response: OpenAI response object with optional ``usage`` metadata.
+        """
         if hasattr(response, 'usage') and response.usage:
             self._usage["prompt_tokens"] += response.usage.prompt_tokens
             self._usage["completion_tokens"] += response.usage.completion_tokens
@@ -393,16 +501,17 @@ class PolicyAnalyzer:
         self._usage["successful_requests"] += 1
 
     def _record_failure(self):
-        """Record a failed request."""
+        """Record a failed request for reporting and cost summaries."""
         self._usage["requests"] += 1
         self._usage["failed_requests"] += 1
 
     def get_usage(self) -> Dict[str, Any]:
         """
-        Get current usage statistics.
+        Return current usage statistics for the active analyzer instance.
 
         Returns:
-            Dictionary with usage stats including tokens, requests, and estimated cost.
+            Dictionary with tokens, request counts, selected model, and an
+            estimated dollar cost based on ``MODEL_PRICING``.
         """
         usage = self._usage.copy()
 
@@ -416,7 +525,7 @@ class PolicyAnalyzer:
         return usage
 
     def print_usage(self):
-        """Print a formatted usage summary."""
+        """Print a human-readable summary of the current usage counters."""
         usage = self.get_usage()
         print("\n" + "=" * 50)
         print("OPENAI API USAGE SUMMARY")
@@ -430,20 +539,21 @@ class PolicyAnalyzer:
         print("=" * 50)
 
     def reset_usage(self):
-        """Reset usage counters. Call this to start fresh tracking."""
+        """Reset usage counters so a new run starts from a clean slate."""
         self._reset_usage()
         logger.info("Usage counters reset")
 
     def analyze_policy(self, policy_text: str, app_id: str = None) -> Optional[Dict[str, Any]]:
         """
-        Analyze a single privacy policy and return structured results.
+        Analyze one privacy policy synchronously.
 
         Args:
-            policy_text: The privacy policy text to analyze
-            app_id: Optional app identifier for logging
+            policy_text: Raw privacy policy text to send to the model.
+            app_id: Optional application identifier used in logs.
 
         Returns:
-            Dictionary with analysis results or None if error
+            Parsed structured output for the policy, or ``None`` when the
+            request fails after retry handling.
         """
         # Truncate if too long (GPT-4o-mini context is 128k but we want to stay safe)
         max_chars = 100000
@@ -492,14 +602,15 @@ class PolicyAnalyzer:
 
     async def analyze_policy_async(self, policy_text: str, app_id: str = None) -> Optional[Dict[str, Any]]:
         """
-        Analyze a single privacy policy asynchronously.
+        Analyze one privacy policy asynchronously.
 
         Args:
-            policy_text: The privacy policy text to analyze
-            app_id: Optional app identifier for logging
+            policy_text: Raw privacy policy text to send to the model.
+            app_id: Optional application identifier used in logs.
 
         Returns:
-            Dictionary with analysis results or None if error
+            Parsed structured output for the policy, or ``None`` when the
+            request fails after retry handling.
         """
         max_chars = 100000
         if len(policy_text) > max_chars:
@@ -555,7 +666,19 @@ class PolicyAnalyzer:
         name_column: str,
         policy_column: str
     ) -> Dict[str, Any]:
-        """Process a single policy with semaphore for rate limiting."""
+        """Process one dataset row inside the concurrent batch workflow.
+
+        Args:
+            row: Dataset row containing identifiers and policy text columns.
+            semaphore: Async semaphore limiting concurrent OpenAI requests.
+            id_column: Column name containing the application identifier.
+            name_column: Column name containing the human-readable app name.
+            policy_column: Preferred policy text column.
+
+        Returns:
+            A flattened output row representing either a successful analysis or
+            an error placeholder.
+        """
         async with semaphore:
             app_id = row.get(id_column, "unknown")
             app_name = row.get(name_column, "") if name_column in row.index else ""
@@ -583,19 +706,19 @@ class PolicyAnalyzer:
         resume_from: int = 0
     ) -> pd.DataFrame:
         """
-        Process a batch of policies concurrently from CSV.
+        Process a CSV batch concurrently using asyncio.
 
         Args:
-            input_file: Path to input CSV file
-            output_file: Path to output CSV file
-            policy_column: Column name containing policy text
-            id_column: Column name containing app identifier
-            name_column: Column name containing app name
-            max_concurrent: Maximum number of concurrent API calls (default: 10)
-            resume_from: Index to resume processing from
+            input_file: Path to the source CSV file.
+            output_file: Path where partial and final CSV results are written.
+            policy_column: Column name containing policy text.
+            id_column: Column name containing the application identifier.
+            name_column: Column name containing the application name.
+            max_concurrent: Maximum number of simultaneous OpenAI requests.
+            resume_from: Row index to start from when resuming a run.
 
         Returns:
-            DataFrame with analysis results
+            DataFrame containing one flattened output row per processed policy.
         """
         logger.info(f"Loading policies from {input_file}")
         df = pd.read_csv(input_file)
@@ -656,19 +779,19 @@ class PolicyAnalyzer:
         resume_from: int = 0
     ) -> pd.DataFrame:
         """
-        Process a batch of policies from CSV.
+        Process a CSV batch sequentially.
 
         Args:
-            input_file: Path to input CSV file
-            output_file: Path to output CSV file
-            policy_column: Column name containing policy text
-            id_column: Column name containing app identifier
-            name_column: Column name containing app name (optional)
-            delay: Delay between API calls in seconds
-            resume_from: Index to resume processing from (for crash recovery)
+            input_file: Path to the source CSV file.
+            output_file: Path where partial and final CSV results are written.
+            policy_column: Column name containing policy text.
+            id_column: Column name containing the application identifier.
+            name_column: Column name containing the application name.
+            delay: Delay between requests, mainly for lower-rate or debugging runs.
+            resume_from: Row index to start from when resuming a run.
 
         Returns:
-            DataFrame with analysis results
+            DataFrame containing one flattened output row per processed policy.
         """
         logger.info(f"Loading policies from {input_file}")
 
@@ -736,13 +859,14 @@ class PolicyAnalyzer:
 
     def analyze_single_file(self, file_path: str) -> Dict[str, Any]:
         """
-        Analyze a single privacy policy from a text file.
+        Analyze a single text file outside of the batch CSV workflow.
 
         Args:
-            file_path: Path to text file containing privacy policy
+            file_path: Path to a text file containing privacy policy content.
 
         Returns:
-            Dictionary with analysis results
+            Flattened analysis output. For convenience, the nested ``coppa`` and
+            ``gdpr`` objects are reattached when analysis succeeds.
         """
         with open(file_path, 'r', encoding='utf-8') as f:
             policy_text = f.read()

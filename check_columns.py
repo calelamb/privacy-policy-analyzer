@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
 """
-Quick script to check the columns in your Excel/CSV file and prepare it for analysis.
+Inspect a spreadsheet or CSV and suggest analyzer column mappings.
+
+This helper is useful when the research team receives a new dataset and needs
+to understand which columns correspond to policy text, app identifiers, and app
+names before running the full analyzer.
 """
 
 import pandas as pd
 import sys
 
 def check_and_prepare_file(input_file):
-    """Check columns and prepare file for analysis."""
+    """Inspect a dataset and print a suggested analyzer command.
+
+    Args:
+        input_file: Path to an Excel or CSV file to inspect.
+
+    Returns:
+        The loaded dataframe so callers can perform additional inspection in a
+        Python session if needed.
+    """
 
     # Try to read the file (works with both Excel and CSV)
     if input_file.endswith('.xlsx') or input_file.endswith('.xls'):

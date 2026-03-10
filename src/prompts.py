@@ -1,7 +1,15 @@
 """
-System prompts for privacy policy analysis.
+Canonical system prompt for the v2 privacy policy analyzer.
+
+The analyzer uses a single long-form prompt because the research workflow
+requires deterministic scoring across a fixed regulatory framework. Keep this
+module focused on prompt content only; the calling logic and JSON schema live
+in ``src.analyzer`` and ``src.models``.
 """
 
+# This prompt is the policy-analysis contract shared by the sync and async
+# analyzer flows. Changes here should usually be coordinated with the model
+# schema in ``src.models``.
 SYSTEM_PROMPT = """You are a legal analyst specializing in privacy regulatory compliance for K-12 educational technology applications. You will analyze a privacy policy and extract structured compliance information across 14 regulatory categories derived from GDPR and COPPA requirements.
 
 CORE RULES:

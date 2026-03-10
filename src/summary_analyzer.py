@@ -2,6 +2,10 @@
 """
 Analyzer for pre-extracted privacy policy summaries.
 Works with structured Q&A format rather than full policy text.
+
+This is a legacy 9-indicator workflow retained for older datasets that already
+contain extracted summary answers. The main research pipeline now lives in
+``src.analyzer`` and operates directly on policy text.
 """
 
 import pandas as pd
@@ -10,7 +14,14 @@ from typing import Dict
 
 def analyze_summary_fields(row: pd.Series) -> Dict[str, bool]:
     """
-    Analyze pre-extracted privacy fields to determine the 9 boolean indicators.
+    Score a pre-extracted summary row against the legacy 9 indicators.
+
+    Args:
+        row: A dataframe row containing question-and-answer style summary fields.
+
+    Returns:
+        Dictionary of the legacy boolean indicators plus the derived compliance
+        score and risk level.
     """
 
     results = {}
@@ -104,7 +115,15 @@ def analyze_summary_fields(row: pd.Series) -> Dict[str, bool]:
     return results
 
 def process_dataset(input_file: str, output_file: str):
-    """Process the entire dataset."""
+    """Run the legacy summary-based analyzer over an entire dataset.
+
+    Args:
+        input_file: Path to the CSV or Excel file containing summary fields.
+        output_file: Destination path for the generated analysis CSV.
+
+    Returns:
+        The dataframe written to ``output_file``.
+    """
 
     print(f"Loading data from {input_file}...")
 

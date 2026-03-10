@@ -25,6 +25,11 @@ POLICY_COLUMN       = "ppCompany"
 
 
 def main():
+    """Resume a partially completed first-pass dataset run.
+
+    The script keeps successful rows and intentional short-policy skips, then
+    reprocesses only failed or previously unprocessed apps.
+    """
     # 1. Load existing results — only treat successful rows as "done"
     #    Rows with error == 'analysis_failed' need to be retried
     #    Rows with error == 'empty_or_short_policy' are intentionally skipped (keep them)

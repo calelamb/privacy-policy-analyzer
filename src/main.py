@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """
-CLI entry point for the Privacy Policy Analyzer.
+Command-line entry point for the v2 privacy policy analyzer.
+
+This module is the primary interface for researchers running the analyzer from
+the terminal. It supports:
+
+- batch CSV processing
+- single-policy inspection from a text file
+- sequential or concurrent execution
+- flexible input column mapping for different datasets
 """
 
 import argparse
@@ -14,7 +22,15 @@ from .analyzer import PolicyAnalyzer
 
 
 def main():
-    """Main entry point for the CLI."""
+    """Run the analyzer CLI and delegate work to :class:`PolicyAnalyzer`.
+
+    The function performs four high-level steps:
+
+    1. Load environment variables from ``.env`` if present.
+    2. Parse and validate CLI arguments.
+    3. Build a ``PolicyAnalyzer`` with the requested model and API key.
+    4. Execute either single-file or batch processing mode.
+    """
     # Load environment variables
     load_dotenv()
 

@@ -1,16 +1,44 @@
-# React + Vite
+# Website
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This folder contains the React/Vite frontend used to present the research project and provide an interactive analysis experience.
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+npm install
+npm run dev
+npm run build
+npm run preview
+npm run lint
+```
 
-## React Compiler
+The Vite dev server proxies `/api` requests to `http://localhost:8000`, so the FastAPI backend should be running when you test the interactive analyzer:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+uvicorn api.main:app --reload
+```
 
-## Expanding the ESLint configuration
+## What Lives Here
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+| Path | Purpose |
+| --- | --- |
+| `src/App.jsx` | top-level routing |
+| `src/pages/` | public site pages |
+| `src/components/` | shared layout and UI components |
+| `src/index.css` | global styling and theme |
+| `public/` | static assets, including the AMCIS paper PDF |
+
+## Current Status
+
+This frontend is useful for demos and research presentation, but it is not fully synchronized with the current v2 analyzer:
+
+- The Python CLI analyzer now returns a 35-indicator schema.
+- The interactive `Analyze` page still expects the older 9-indicator result shape.
+- Some static results pages also reflect older snapshot metrics.
+
+Treat the frontend as a presentation layer until the UI and API are updated to the current v2 output contract.
+
+For the authoritative research workflow, use the Python documentation in:
+
+- [`../docs/research-team-guide.md`](../docs/research-team-guide.md)
+- [`../docs/output-reference.md`](../docs/output-reference.md)

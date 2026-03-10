@@ -2,7 +2,9 @@
 Cluster analysis and compliance scoring for analyzed privacy policies.
 
 Clusters policies using KMeans on 14 disclosure columns, computes a compliance
-score from 35 boolean columns, and outputs an augmented CSV.
+score from 35 boolean columns, and outputs an augmented CSV. This file is a
+post-processing utility for downstream research analysis rather than part of
+the extraction pipeline itself.
 """
 
 import argparse
@@ -36,7 +38,14 @@ SCORING_COLUMNS = TABLE1_BOOLEAN_FIELDS
 
 
 def _coerce_to_bool(series: pd.Series) -> pd.Series:
-    """Convert a column with mixed types (string, numeric, NaN) to boolean."""
+    """Convert a mixed-type pandas series into strict booleans.
+
+    Args:
+        series: Input column that may contain strings, numbers, booleans, or NaN.
+
+    Returns:
+        A boolean series suitable for scoring and clustering.
+    """
     def _convert(val):
         if pd.isna(val):
             return False
@@ -50,7 +59,14 @@ def _coerce_to_bool(series: pd.Series) -> pd.Series:
 
 
 def load_and_validate(input_path: str) -> pd.DataFrame:
-    """Read the CSV and validate that all required columns are present."""
+    """Load an analyzed CSV and coerce required scoring columns to booleans.
+
+    Args:
+        input_path: Path to the analyzer output CSV.
+
+    Returns:
+        A validated dataframe ready for clustering.
+    """
     df = pd.read_csv(input_path)
 
     missing = [c for c in SCORING_COLUMNS if c not in df.columns]
@@ -65,7 +81,14 @@ def load_and_validate(input_path: str) -> pd.DataFrame:
 
 
 def run_clustering(df: pd.DataFrame) -> pd.DataFrame:
-    """Run KMeans clustering on the 14 disclosure columns."""
+    """Assign each policy to one of three compliance clusters.
+
+    Args:
+        df: Validated analyzer output dataframe.
+
+    Returns:
+        The same dataframe with a ``compliance_cluster`` column appended.
+    """
     X = df[CLUSTERING_COLUMNS].fillna(0).astype(int)
     kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
     df["compliance_cluster"] = kmeans.fit_predict(X)
@@ -73,7 +96,15 @@ def run_clustering(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_compliance_score(df: pd.DataFrame) -> pd.DataFrame:
-    """Use pre-computed composite scores from analyzer output."""
+    """Populate the generic ``compliance_score`` column used in summaries.
+
+    Args:
+        df: Analyzer output dataframe, with or without precomputed composite
+            percentages.
+
+    Returns:
+        The dataframe with a ``compliance_score`` column.
+    """
     # If composite scores are already in the dataframe, use them directly
     if "overall_composite_pct" in df.columns:
         df["compliance_score"] = df["overall_composite_pct"]
@@ -86,7 +117,11 @@ def compute_compliance_score(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def print_summary(df: pd.DataFrame) -> None:
-    """Print cluster sizes, per-cluster average scores, and disclosure rates."""
+    """Print a console summary of the clustering results.
+
+    Args:
+        df: Clustered analyzer dataframe with score columns present.
+    """
     print("\n=== Cluster Analysis Summary ===\n")
 
     print("Cluster sizes:")
@@ -111,7 +146,13 @@ def print_summary(df: pd.DataFrame) -> None:
 
 
 def save_output(original_df: pd.DataFrame, clustered_df: pd.DataFrame, output_path: str) -> None:
-    """Merge cluster/score columns back onto the original DataFrame and save."""
+    """Merge clustering columns onto the original CSV shape and save the result.
+
+    Args:
+        original_df: Unmodified dataframe loaded directly from disk.
+        clustered_df: Processed dataframe containing new cluster and score columns.
+        output_path: Destination path for the augmented CSV.
+    """
     original_df["_row_idx"] = range(len(original_df))
     clustered_df["_row_idx"] = range(len(clustered_df))
 
@@ -128,6 +169,7 @@ def save_output(original_df: pd.DataFrame, clustered_df: pd.DataFrame, output_pa
 
 
 def main():
+    """Parse CLI arguments and run the clustering utility end to end."""
     parser = argparse.ArgumentParser(
         description="Cluster analyzed privacy policies and compute compliance scores."
     )

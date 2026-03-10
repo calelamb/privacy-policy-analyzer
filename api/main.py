@@ -1,5 +1,9 @@
 """
-FastAPI backend wrapping PolicyAnalyzer for interactive privacy policy analysis.
+FastAPI wrapper for interactive privacy policy analysis.
+
+This API exists primarily to support the demo website in ``www/``. The core
+research workflow still runs through the Python CLI, but the API remains useful
+for quick manual inspection and UI prototyping.
 """
 
 import os
@@ -9,7 +13,7 @@ from typing import Optional
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.analyzer import PolicyAnalyzer
 
@@ -27,6 +31,14 @@ _analyzer: Optional[PolicyAnalyzer] = None
 
 
 def get_analyzer() -> PolicyAnalyzer:
+    """Return a lazily initialized singleton ``PolicyAnalyzer`` instance.
+
+    Returns:
+        The shared analyzer used for interactive requests.
+
+    Raises:
+        HTTPException: If ``OPENAI_API_KEY`` is not configured.
+    """
     global _analyzer
     if _analyzer is None:
         api_key = os.environ.get("OPENAI_API_KEY")
@@ -37,10 +49,19 @@ def get_analyzer() -> PolicyAnalyzer:
 
 
 class AnalyzeRequest(BaseModel):
-    policy_text: Optional[str] = None
-    policy_url: Optional[str] = None
+    """Incoming request payload for the interactive analysis endpoint."""
 
+    policy_text: Optional[str] = Field(
+        default=None,
+        description="Raw privacy policy text pasted directly by the user.",
+    )
+    policy_url: Optional[str] = Field(
+        default=None,
+        description="Optional URL to fetch and strip into plain text before analysis.",
+    )
 
+# Legacy indicator set used by the current interactive UI. The main v2 CLI uses
+# the 35-indicator schema in ``src.analyzer``.
 INDICATOR_KEYS = [
     "data_collection_disclosure",
     "data_use_purpose_specification",
@@ -55,7 +76,14 @@ INDICATOR_KEYS = [
 
 
 def strip_html(html: str) -> str:
-    """Strip HTML tags and decode common entities for raw text extraction."""
+    """Convert fetched HTML into plain text for model input.
+
+    Args:
+        html: Raw HTML content fetched from a privacy policy URL.
+
+    Returns:
+        A whitespace-normalized plain-text version of the page content.
+    """
     text = re.sub(r"<script[^>]*>.*?</script>", " ", html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<style[^>]*>.*?</style>", " ", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
@@ -70,6 +98,19 @@ def strip_html(html: str) -> str:
 
 @app.post("/api/analyze")
 async def analyze(req: AnalyzeRequest):
+    """Analyze pasted or fetched policy text for the interactive frontend.
+
+    Args:
+        req: Request body containing direct policy text and/or a policy URL.
+
+    Returns:
+        The analyzer output augmented with the legacy UI's compliance score and
+        risk-level summary fields.
+
+    Raises:
+        HTTPException: If the URL fetch fails, the text is too short, the API
+            key is missing, or the analysis fails.
+    """
     policy_text = req.policy_text
 
     if not policy_text and req.policy_url:

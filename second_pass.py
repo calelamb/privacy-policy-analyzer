@@ -27,6 +27,12 @@ POLICY_COLUMN       = "ppCompany"
 
 
 def main():
+    """Recover skipped apps using the richer follow-up dataset.
+
+    The script isolates rows marked ``empty_or_short_policy`` in the first-pass
+    output, looks them up in the alternate dataset, and merges any recovered
+    analyses back into a final combined CSV.
+    """
     # 1. Load first pass results
     if not os.path.exists(FIRST_PASS_OUTPUT):
         print(f"ERROR: First pass output not found at {FIRST_PASS_OUTPUT}")
@@ -56,6 +62,7 @@ def main():
     skipped_with_text = finished[finished['app_id'].isin(skipped)].copy()
 
     def combined_len(row):
+        """Return the longest available privacy-text field for a row."""
         c = str(row.get('ppCompany', '') or '').strip()
         p = str(row.get('ppPlatform', '') or '').strip()
         return max(len(c), len(p))
